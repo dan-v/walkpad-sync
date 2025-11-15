@@ -43,6 +43,13 @@ pub struct BluetoothManager {
     config: BluetoothConfig,
     status_tx: broadcast::Sender<ConnectionStatus>,
     current_workout_id: Arc<RwLock<Option<i64>>>,
+    workout_baseline: Arc<RwLock<Option<WorkoutBaseline>>>,
+}
+
+#[derive(Debug, Clone)]
+struct WorkoutBaseline {
+    start_distance: Option<u32>,
+    start_calories: Option<u16>,
 }
 
 impl BluetoothManager {
@@ -54,6 +61,7 @@ impl BluetoothManager {
             config,
             status_tx,
             current_workout_id: Arc::new(RwLock::new(None)),
+            workout_baseline: Arc::new(RwLock::new(None)),
         }, status_rx)
     }
 
@@ -150,6 +158,8 @@ impl BluetoothManager {
         let mut sample_count = 0;
         let mut zero_speed_count = 0;
         let zero_speed_threshold = self.config.workout_end_timeout_secs;
+        let mut last_distance: Option<u32> = None;
+        let mut last_calories: Option<u16> = None;
 
         while let Some(notification) = notification_stream.next().await {
             if notification.uuid != char.uuid {
@@ -162,6 +172,68 @@ impl BluetoothManager {
                     debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, samples={}",
                            current_speed, data.incline.unwrap_or(0.0), data.distance, sample_count);
 
+                    // Detect treadmill reset (cumulative values decreased significantly)
+                    if workout_started {
+                        let mut reset_detected = false;
+
+                        if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
+                            // If distance decreased by more than 10 meters, consider it a reset
+                            if current_distance < prev_distance.saturating_sub(10) {
+                                warn!("Treadmill reset detected: distance dropped from {}m to {}m",
+                                      prev_distance, current_distance);
+                                reset_detected = true;
+                            }
+                        }
+
+                        if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
+                            // If calories decreased by more than 5, consider it a reset
+                            if current_calories < prev_calories.saturating_sub(5) {
+                                warn!("Treadmill reset detected: calories dropped from {} to {}",
+                                      prev_calories, current_calories);
+                                reset_detected = true;
+                            }
+                        }
+
+                        if reset_detected {
+                            info!("Ending current workout due to treadmill reset (samples: {})", sample_count);
+
+                            // End the current workout (this clears baseline too)
+                            if let Err(e) = self.end_workout().await {
+                                error!("Failed to end workout after reset: {}", e);
+                            }
+
+                            // Reset state
+                            workout_started = false;
+                            sample_count = 0;
+                            zero_speed_count = 0;
+                            last_distance = None;
+                            last_calories = None;
+
+                            // If treadmill is still moving, start a new workout immediately
+                            if current_speed > 0.1 {
+                                info!("Starting new workout after reset (speed: {:.2} m/s)", current_speed);
+                                if let Err(e) = self.start_workout().await {
+                                    error!("Failed to start workout after reset: {}", e);
+                                    continue;
+                                }
+                                workout_started = true;
+
+                                // Capture new baseline for the new workout
+                                let mut baseline = self.workout_baseline.write().await;
+                                *baseline = Some(WorkoutBaseline {
+                                    start_distance: data.distance,
+                                    start_calories: data.total_energy,
+                                });
+                                info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
+                                      data.distance, data.total_energy);
+                            }
+                        }
+                    }
+
+                    // Track last cumulative values for reset detection
+                    last_distance = data.distance;
+                    last_calories = data.total_energy;
+
                     // Detect workout start (speed > 0)
                     if !workout_started && current_speed > 0.1 {
                         info!("Workout started! Initial speed: {:.2} m/s", current_speed);
@@ -173,6 +245,15 @@ impl BluetoothManager {
                             error!("Failed to start workout: {}", e);
                             continue;
                         }
+
+                        // Capture baseline cumulative values on first sample
+                        let mut baseline = self.workout_baseline.write().await;
+                        *baseline = Some(WorkoutBaseline {
+                            start_distance: data.distance,
+                            start_calories: data.total_energy,
+                        });
+                        info!("Workout baseline: distance={:?}m, calories={:?}kcal",
+                              data.distance, data.total_energy);
                     }
 
                     // Record sample if workout is active
@@ -202,6 +283,8 @@ impl BluetoothManager {
                                     workout_started = false;
                                     sample_count = 0;
                                     zero_speed_count = 0;
+                                    last_distance = None;
+                                    last_calories = None;
                                 }
                             }
                         } else {
@@ -262,14 +345,31 @@ impl BluetoothManager {
         if let Some(workout_id) = *current {
             let timestamp = Utc::now();
 
+            // Calculate deltas from workout baseline
+            let baseline = self.workout_baseline.read().await;
+            let (delta_distance, delta_calories) = if let Some(ref baseline) = *baseline {
+                let delta_dist = match (data.distance, baseline.start_distance) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                let delta_cal = match (data.total_energy, baseline.start_calories) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                (delta_dist, delta_cal)
+            } else {
+                // No baseline yet - store raw values (shouldn't happen normally)
+                (data.distance.map(|d| d as i64), data.total_energy.map(|e| e as i64))
+            };
+
             self.storage.add_sample(
                 workout_id,
                 timestamp,
                 data.speed,
                 data.incline,
-                data.distance.map(|d| d as i64),
+                delta_distance,
                 data.heart_rate.map(|hr| hr as i64),
-                data.total_energy.map(|e| e as i64),
+                delta_calories,
                 None, // cadence not available from treadmill
             ).await?;
         }
@@ -285,6 +385,12 @@ impl BluetoothManager {
             *current = None; // Clear immediately to allow new workouts
             id
         };
+
+        // Clear baseline for next workout
+        {
+            let mut baseline = self.workout_baseline.write().await;
+            *baseline = None;
+        }
 
         if let Some(workout_id) = workout_id {
             info!("Ending workout {}", workout_id);
