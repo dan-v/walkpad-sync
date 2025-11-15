@@ -109,10 +109,22 @@ impl BluetoothManager {
         peripheral.discover_services().await?;
         let chars = peripheral.characteristics();
 
+        // Log all discovered services and characteristics for debugging
+        info!("Discovered {} characteristics on treadmill", chars.len());
+        for (i, char) in chars.iter().enumerate() {
+            debug!("  [{}] Service: {}, Characteristic: {}, Properties: {:?}",
+                   i, char.service_uuid, char.uuid, char.properties);
+        }
+
         let treadmill_char = chars
             .iter()
             .find(|c| c.uuid == TREADMILL_DATA_UUID)
-            .ok_or_else(|| anyhow!("Treadmill data characteristic not found"))?;
+            .ok_or_else(|| {
+                warn!("FTMS Treadmill Data characteristic (UUID: {}) not found", TREADMILL_DATA_UUID);
+                warn!("Your treadmill may not support the standard FTMS protocol");
+                warn!("Check the characteristic list above to see what your treadmill exposes");
+                anyhow!("Treadmill data characteristic not found")
+            })?;
 
         // Subscribe to notifications
         peripheral.subscribe(treadmill_char).await?;
@@ -131,6 +143,8 @@ impl BluetoothManager {
 
         // Scan for configured timeout
         let timeout = self.config.scan_timeout_secs;
+        let mut discovered_devices: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         for i in 0..timeout {
             sleep(Duration::from_secs(1)).await;
 
@@ -138,6 +152,11 @@ impl BluetoothManager {
             for peripheral in peripherals {
                 if let Ok(Some(props)) = peripheral.properties().await {
                     if let Some(name) = props.local_name {
+                        // Log all discovered devices for debugging
+                        if discovered_devices.insert(name.clone()) {
+                            debug!("Discovered BLE device: '{}' (address: {:?})", name, props.address);
+                        }
+
                         if name.contains(&self.config.device_name_filter) {
                             info!("Found treadmill '{}' after {} seconds", name, i + 1);
                             adapter.stop_scan().await?;
@@ -149,6 +168,17 @@ impl BluetoothManager {
         }
 
         adapter.stop_scan().await?;
+
+        // Log summary of discovered devices for debugging
+        if discovered_devices.is_empty() {
+            warn!("No BLE devices discovered at all. Is Bluetooth enabled and are there devices nearby?");
+        } else {
+            warn!("Treadmill not found. Discovered {} device(s): {:?}",
+                  discovered_devices.len(),
+                  discovered_devices.iter().collect::<Vec<_>>());
+            warn!("Hint: Update device_name_filter in config.toml to match your treadmill's name");
+        }
+
         Err(anyhow!("Treadmill not found after {} seconds", timeout))
     }
 
