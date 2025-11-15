@@ -1,0 +1,19 @@
+[Unit]
+Description=Treadmill Sync Service
+After=network.target bluetooth.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/treadmill-sync
+ExecStart=/home/pi/treadmill-sync/target/release/treadmill-sync
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+# Environment variables
+Environment="RUST_LOG=info"
+
+[Install]
+WantedBy=multi-user.target
