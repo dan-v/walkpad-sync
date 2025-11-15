@@ -9,6 +9,8 @@ struct SettingsView: View {
     @State private var useHTTPS: Bool
     @State private var isTestingConnection = false
     @State private var connectionTestResult: ConnectionTestResult?
+    @State private var showingValidationError = false
+    @State private var validationErrorMessage = ""
 
     init() {
         let config = ServerConfig.load()
@@ -97,6 +99,11 @@ struct SettingsView: View {
                 }
             }
         }
+        .alert("Invalid Settings", isPresented: $showingValidationError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(validationErrorMessage)
+        }
     }
 
     private func testConnection() {
@@ -129,9 +136,22 @@ struct SettingsView: View {
     }
 
     private func saveSettings() {
-        guard let portNum = Int(port) else { return }
+        // Validate host
+        let trimmedHost = host.trimmingCharacters(in: .whitespaces)
+        if trimmedHost.isEmpty {
+            validationErrorMessage = "Server host cannot be empty"
+            showingValidationError = true
+            return
+        }
 
-        let config = ServerConfig(host: host, port: portNum, useHTTPS: useHTTPS)
+        // Validate port
+        guard let portNum = Int(port), portNum > 0, portNum <= 65535 else {
+            validationErrorMessage = "Port must be a number between 1 and 65535"
+            showingValidationError = true
+            return
+        }
+
+        let config = ServerConfig(host: trimmedHost, port: portNum, useHTTPS: useHTTPS)
 
         Task {
             await syncManager.updateServerConfig(config)

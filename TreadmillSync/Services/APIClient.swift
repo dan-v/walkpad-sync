@@ -17,7 +17,9 @@ actor APIClient {
     // MARK: - Health Check
 
     func checkConnection() async throws -> Bool {
-        let url = URL(string: "\(config.baseURL)/api/health")!
+        guard let url = URL(string: "\(config.baseURL)/api/health") else {
+            throw APIError.invalidURL
+        }
         let (_, response) = try await session.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse else {
@@ -30,7 +32,9 @@ actor APIClient {
     // MARK: - Registration
 
     func registerDevice(name: String = "iPhone") async throws {
-        let url = URL(string: "\(config.baseURL)/api/sync/register")!
+        guard let url = URL(string: "\(config.baseURL)/api/sync/register") else {
+            throw APIError.invalidURL
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -49,13 +53,19 @@ actor APIClient {
     // MARK: - Fetch Workouts
 
     func fetchPendingWorkouts(limit: Int = 100) async throws -> [Workout] {
-        var components = URLComponents(string: "\(config.baseURL)/api/workouts/pending")!
+        guard var components = URLComponents(string: "\(config.baseURL)/api/workouts/pending") else {
+            throw APIError.invalidURL
+        }
         components.queryItems = [
             URLQueryItem(name: "device_id", value: deviceID),
             URLQueryItem(name: "limit", value: String(limit))
         ]
 
-        let (data, response) = try await session.data(from: components.url!)
+        guard let url = components.url else {
+            throw APIError.invalidURL
+        }
+
+        let (data, response) = try await session.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse,
               (200...299).contains(httpResponse.statusCode) else {
@@ -69,7 +79,9 @@ actor APIClient {
     // MARK: - Fetch Samples
 
     func fetchWorkoutSamples(workoutId: Int64) async throws -> [WorkoutSample] {
-        let url = URL(string: "\(config.baseURL)/api/workouts/\(workoutId)/samples")!
+        guard let url = URL(string: "\(config.baseURL)/api/workouts/\(workoutId)/samples") else {
+            throw APIError.invalidURL
+        }
         let (data, response) = try await session.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse,
@@ -84,7 +96,9 @@ actor APIClient {
     // MARK: - Confirm Sync
 
     func confirmSync(workoutId: Int64, healthKitUUID: UUID? = nil) async throws {
-        let url = URL(string: "\(config.baseURL)/api/workouts/\(workoutId)/confirm_sync")!
+        guard let url = URL(string: "\(config.baseURL)/api/workouts/\(workoutId)/confirm_sync") else {
+            throw APIError.invalidURL
+        }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")

@@ -53,8 +53,9 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let raw_speed = u16::from_le_bytes([data[offset], data[offset + 1]]);
         let speed_kmh = raw_speed as f64 / 100.0;
-        result.speed = Some(speed_kmh / 3.6); // km/h to m/s
-        debug!("FTMS SPEED: raw={} ({:.2} km/h = {:.2} m/s)", raw_speed, speed_kmh, result.speed.unwrap());
+        let speed_ms = speed_kmh / 3.6; // km/h to m/s
+        result.speed = Some(speed_ms);
+        debug!("FTMS SPEED: raw={} ({:.2} km/h = {:.2} m/s)", raw_speed, speed_kmh, speed_ms);
         offset += 2;
     }
 
@@ -76,8 +77,9 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             return Err(anyhow!("Not enough data for inclination"));
         }
         let raw_incline = i16::from_le_bytes([data[offset], data[offset + 1]]);
-        result.incline = Some(raw_incline as f64 / 10.0); // 0.1% resolution
-        debug!("FTMS INCLINE: raw={} ({:.1}%)", raw_incline, result.incline.unwrap());
+        let incline_pct = raw_incline as f64 / 10.0; // 0.1% resolution
+        result.incline = Some(incline_pct);
+        debug!("FTMS INCLINE: raw={} ({:.1}%)", raw_incline, incline_pct);
         offset += 4; // Skip ramp angle (2 bytes) + inclination (2 bytes)
     }
 

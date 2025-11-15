@@ -40,7 +40,11 @@ struct TreadmillSyncApp: App {
             forTaskWithIdentifier: "com.treadmillsync.refresh",
             using: nil
         ) { task in
-            self.handleBackgroundRefresh(task: task as! BGAppRefreshTask)
+            guard let refreshTask = task as? BGAppRefreshTask else {
+                task.setTaskCompleted(success: false)
+                return
+            }
+            self.handleBackgroundRefresh(task: refreshTask)
         }
     }
 
