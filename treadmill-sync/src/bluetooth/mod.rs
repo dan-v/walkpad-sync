@@ -222,6 +222,13 @@ impl BluetoothManager {
         let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
         let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
 
+        // For LifeSpan: accumulate responses from all 5 queries into complete samples
+        let mut lifespan_accumulator = if is_lifespan {
+            Some(TreadmillData::default())
+        } else {
+            None
+        };
+
         // Start polling task for LifeSpan protocol
         let poll_task = if is_lifespan {
             let peripheral = peripheral.clone();
@@ -276,9 +283,34 @@ impl BluetoothManager {
                     // Parse response for this specific query
                     match parse_lifespan_response(&notification.value, query) {
                         Ok(partial_data) => {
-                            // We get partial data from each query - we'd need to accumulate
-                            // For now, just process what we have
-                            partial_data
+                            // Accumulate this response into the accumulator
+                            if let Some(ref mut acc) = lifespan_accumulator {
+                                // Merge partial_data fields into accumulator
+                                if partial_data.speed.is_some() {
+                                    acc.speed = partial_data.speed;
+                                }
+                                if partial_data.distance.is_some() {
+                                    acc.distance = partial_data.distance;
+                                }
+                                if partial_data.total_energy.is_some() {
+                                    acc.total_energy = partial_data.total_energy;
+                                }
+                                if partial_data.elapsed_time.is_some() {
+                                    acc.elapsed_time = partial_data.elapsed_time;
+                                }
+
+                                // Time query is the last in the cycle - process accumulated data
+                                if query == LifeSpanQuery::Time {
+                                    let complete_data = acc.clone();
+                                    *acc = TreadmillData::default(); // Reset for next cycle
+                                    complete_data
+                                } else {
+                                    // Not ready yet, skip this notification
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
                         }
                         Err(e) => {
                             debug!("Failed to parse LifeSpan response for {:?}: {}", query, e);
@@ -299,11 +331,6 @@ impl BluetoothManager {
                     }
                 }
             };
-
-            // For LifeSpan, skip responses that don't contain useful data (like Steps which we don't use)
-            if is_lifespan && data.speed.is_none() && data.distance.is_none() && data.total_energy.is_none() && data.elapsed_time.is_none() {
-                continue;
-            }
 
             let current_speed = data.speed.unwrap_or(0.0);
             debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
@@ -367,10 +394,6 @@ impl BluetoothManager {
                         }
                     }
 
-                    // Track last cumulative values for reset detection
-                    last_distance = data.distance;
-                    last_calories = data.total_energy;
-
                     // Detect workout start (speed > 0)
                     if !workout_started && current_speed > 0.1 {
                         info!("Workout started! Initial speed: {:.2} m/s", current_speed);
@@ -401,8 +424,22 @@ impl BluetoothManager {
                             sample_count += 1;
                         }
 
-                        // Detect workout end (speed = 0 for sustained period)
-                        if current_speed < 0.1 {
+                        // Detect workout end (no activity for sustained period)
+                        // Check if distance or calories have changed since last sample
+                        let distance_changed = match (data.distance, last_distance) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        let calories_changed = match (data.total_energy, last_calories) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        // Only count as "inactive" if speed is 0 AND neither distance nor calories changed
+                        let is_inactive = current_speed < 0.1 && !distance_changed && !calories_changed;
+
+                        if is_inactive {
                             zero_speed_count += 1;
 
                             if zero_speed_count == 10 {
@@ -411,7 +448,7 @@ impl BluetoothManager {
                             }
 
                             if zero_speed_count >= zero_speed_threshold {
-                                info!("Workout ended after {} seconds of zero speed. Total samples: {}",
+                                info!("Workout ended after {} seconds of inactivity. Total samples: {}",
                                       zero_speed_count, sample_count);
 
                                 if let Err(e) = self.end_workout().await {
@@ -425,13 +462,17 @@ impl BluetoothManager {
                                 }
                             }
                         } else {
-                            // Reset counter if speed picks back up
+                            // Reset counter if any activity detected
                             if zero_speed_count > 0 {
-                                debug!("Speed resumed, resetting end-workout timer");
+                                debug!("Activity detected (speed or distance/calories changed), resetting end-workout timer");
                                 zero_speed_count = 0;
                             }
                         }
                     }
+
+                    // Track last cumulative values for next iteration (after workout end detection)
+                    last_distance = data.distance;
+                    last_calories = data.total_energy;
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
