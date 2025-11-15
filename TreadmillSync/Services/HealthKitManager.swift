@@ -33,18 +33,20 @@ class HealthKitManager: ObservableObject {
             throw HealthKitError.invalidData
         }
 
-        // Create the workout
-        let hkWorkout = HKWorkout(
-            activityType: .walking,
-            start: startDate,
-            end: endDate,
-            duration: TimeInterval(workout.totalDuration ?? 0),
-            totalEnergyBurned: workout.totalCalories.map { HKQuantity(unit: .kilocalorie(), doubleValue: Double($0)) },
-            totalDistance: workout.totalDistance.map { HKQuantity(unit: .meter(), doubleValue: Double($0)) },
-            metadata: [
-                HKMetadataKeyIndoorWorkout: true
-            ]
+        // Create workout configuration
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .walking
+        configuration.locationType = .indoor
+
+        // Create workout builder
+        let builder = HKWorkoutBuilder(
+            healthStore: healthStore,
+            configuration: configuration,
+            device: .local()
         )
+
+        // Begin workout collection
+        try await builder.beginCollection(at: startDate)
 
         // Create workout samples (heart rate, distance points, etc.)
         var workoutSamples: [HKSample] = []
@@ -89,15 +91,21 @@ class HealthKitManager: ObservableObject {
             }
         }
 
-        // Save workout and samples together
-        try await healthStore.save(hkWorkout)
-
-        // Add samples to workout
+        // Add samples to builder
         if !workoutSamples.isEmpty {
-            try await healthStore.addSamples(workoutSamples, to: hkWorkout)
+            try await builder.addSamples(workoutSamples)
         }
 
-        return hkWorkout.uuid
+        // Add metadata
+        await builder.addMetadata([HKMetadataKeyIndoorWorkout: true])
+
+        // End workout collection
+        try await builder.endCollection(at: endDate)
+
+        // Finish the workout and get the result
+        let workout = try await builder.finishWorkout()
+
+        return workout.uuid
     }
 }
 

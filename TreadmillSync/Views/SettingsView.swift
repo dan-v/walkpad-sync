@@ -40,7 +40,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Server Configuration")
                 } footer: {
-                    Text("Example: raspberrypi.local or 192.168.1.100")
+                    Text("Example: myserver.local or 192.168.1.100")
                 }
 
                 // Test Connection

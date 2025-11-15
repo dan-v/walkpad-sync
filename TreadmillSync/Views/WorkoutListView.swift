@@ -3,8 +3,40 @@ import SwiftUI
 struct WorkoutListView: View {
     @EnvironmentObject var syncManager: SyncManager
 
+    @State private var showingServerSetup = false
+
     var body: some View {
         VStack(spacing: 0) {
+            // Server Setup Banner (if not connected)
+            if !syncManager.isConnected {
+                Button {
+                    showingServerSetup = true
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Server Not Connected")
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                            Text("Tap to configure your sync server")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                    }
+                    .padding()
+                    .background(Color.orange.opacity(0.1))
+                }
+                .buttonStyle(.plain)
+                .sheet(isPresented: $showingServerSetup) {
+                    SettingsView()
+                }
+            }
+
             // Status Header
             VStack(spacing: 12) {
                 // Connection Status
@@ -12,7 +44,7 @@ struct WorkoutListView: View {
                     Circle()
                         .fill(syncManager.isConnected ? Color.green : Color.red)
                         .frame(width: 12, height: 12)
-                    Text(syncManager.isConnected ? "Connected" : "Disconnected")
+                    Text(syncManager.isConnected ? "Connected to \(syncManager.serverConfig.host)" : "Disconnected")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                     Spacer()

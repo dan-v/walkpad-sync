@@ -23,7 +23,7 @@
 	<key>NSHealthShareUsageDescription</key>
 	<string>TreadmillSync syncs your treadmill workout data to Apple Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>TreadmillSync saves your treadmill workout data (duration, distance, calories, and heart rate) to Apple Health.</string>
+	<string>TreadmillSync saves your treadmill workout data (duration, distance, speed, incline, calories, and heart rate if available) to Apple Health.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
