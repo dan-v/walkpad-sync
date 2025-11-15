@@ -20,12 +20,10 @@
 	<string>1</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.healthcare-fitness</string>
-	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>TreadmillSync needs Bluetooth to automatically connect to your LifeSpan treadmill and collect workout data in the background, ensuring every step is captured throughout your day.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>TreadmillSync needs to read your health data to prevent duplicate workout entries and ensure accurate step counting.</string>
+	<string>TreadmillSync syncs your treadmill workout data to Apple Health.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>TreadmillSync saves your treadmill workout data (steps, distance, and calories) to Apple Health with rich metadata and activity timelines.</string>
+	<string>TreadmillSync saves your treadmill workout data (duration, distance, calories, and heart rate) to Apple Health.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -47,7 +45,12 @@
 	<true/>
 	<key>UIBackgroundModes</key>
 	<array>
-		<string>bluetooth-central</string>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.treadmillsync.refresh</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>
