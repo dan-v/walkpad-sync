@@ -1,8 +1,12 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{sqlite::SqliteConnectOptions, FromRow, SqlitePool};
+use sqlx::{
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    FromRow, Row, SqlitePool,
+};
 use std::str::FromStr;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Workout {
@@ -53,16 +57,24 @@ pub struct Storage {
 
 impl Storage {
     pub async fn new(database_url: &str) -> Result<Self> {
-        // Parse connection options and enable create_if_missing
+        // Configure SQLite for optimal performance and reliability
         let options = SqliteConnectOptions::from_str(database_url)?
-            .create_if_missing(true);
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal) // WAL mode for better concurrency
+            .synchronous(SqliteSynchronous::Normal) // Faster but still safe
+            .busy_timeout(Duration::from_secs(5)); // Wait up to 5s for locks
 
-        // Create database if it doesn't exist
-        let pool = SqlitePool::connect_with(options).await?;
+        // Create pool with limited connections (SQLite doesn't need many)
+        let pool = SqlitePoolOptions::new()
+            .max_connections(5)
+            .connect_with(options)
+            .await?;
 
-        // Run migrations
+        // Run migrations (execute each statement separately for safety)
         let schema = include_str!("../../schema.sql");
-        sqlx::query(schema).execute(&pool).await?;
+        for statement in schema.split(';').filter(|s| !s.trim().is_empty()) {
+            sqlx::query(statement).execute(&pool).await?;
+        }
 
         Ok(Self { pool })
     }
@@ -142,6 +154,7 @@ impl Storage {
         Ok(workout)
     }
 
+    #[allow(dead_code)]
     pub async fn get_workout(&self, id: i64) -> Result<Option<Workout>> {
         let workout = sqlx::query_as::<_, Workout>("SELECT * FROM workouts WHERE id = ?")
             .bind(id)
@@ -249,4 +262,83 @@ impl Storage {
 
         Ok(())
     }
+
+    // Workout cleanup operations
+    pub async fn delete_workout(&self, workout_id: i64) -> Result<()> {
+        sqlx::query("DELETE FROM workouts WHERE id = ?")
+            .bind(workout_id)
+            .execute(&self.pool)
+            .await?;
+
+        Ok(())
+    }
+
+    pub async fn mark_workout_failed(&self, workout_id: i64, reason: &str) -> Result<()> {
+        let updated_at = chrono::Utc::now().to_rfc3339();
+
+        sqlx::query(
+            "UPDATE workouts SET status = 'failed', updated_at = ? WHERE id = ?"
+        )
+        .bind(&updated_at)
+        .bind(workout_id)
+        .execute(&self.pool)
+        .await?;
+
+        tracing::warn!("Marked workout {} as failed: {}", workout_id, reason);
+        Ok(())
+    }
+
+    // Database aggregation for performance
+    pub async fn get_workout_aggregates(&self, workout_id: i64) -> Result<WorkoutAggregates> {
+        let row = sqlx::query(
+            r#"
+            SELECT
+                COUNT(*) as count,
+                MAX(distance) as max_distance,
+                MAX(calories) as max_calories,
+                AVG(CASE WHEN speed > 0 THEN speed END) as avg_speed,
+                MAX(speed) as max_speed,
+                AVG(incline) as avg_incline,
+                MAX(incline) as max_incline,
+                AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_hr,
+                MAX(heart_rate) as max_hr,
+                MIN(timestamp) as first_timestamp,
+                MAX(timestamp) as last_timestamp
+            FROM workout_samples
+            WHERE workout_id = ?
+            "#
+        )
+        .bind(workout_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(WorkoutAggregates {
+            sample_count: row.get::<i64, _>("count") as usize,
+            total_distance: row.get::<Option<i64>, _>("max_distance").unwrap_or(0),
+            total_calories: row.get::<Option<i64>, _>("max_calories").unwrap_or(0),
+            avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
+            max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
+            avg_incline: row.get::<Option<f64>, _>("avg_incline").unwrap_or(0.0),
+            max_incline: row.get::<Option<f64>, _>("max_incline").unwrap_or(0.0),
+            avg_heart_rate: row.get::<Option<i64>, _>("avg_hr"),
+            max_heart_rate: row.get::<Option<i64>, _>("max_hr"),
+            first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
+            last_timestamp: row.get::<Option<String>, _>("last_timestamp"),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub struct WorkoutAggregates {
+    pub sample_count: usize,
+    pub total_distance: i64,
+    pub total_calories: i64,
+    pub avg_speed: f64,
+    pub max_speed: f64,
+    pub avg_incline: f64,
+    pub max_incline: f64,
+    pub avg_heart_rate: Option<i64>,
+    pub max_heart_rate: Option<i64>,
+    pub first_timestamp: Option<String>,
+    pub last_timestamp: Option<String>,
 }

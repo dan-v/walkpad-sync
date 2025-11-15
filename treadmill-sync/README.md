@@ -174,6 +174,105 @@ curl -X POST http://raspberrypi.local:8080/api/workouts/1/confirm_sync \
 curl http://raspberrypi.local:8080/api/workouts/live
 ```
 
+### Debug Live Workout (Detailed)
+```bash
+curl http://raspberrypi.local:8080/api/debug/live
+```
+
+Returns detailed information including the last 20 samples and full field values.
+
+## Debug Mode
+
+The service includes comprehensive debug logging for troubleshooting Bluetooth data issues.
+
+### Enable Debug Logging
+
+```bash
+# Run manually with debug logging
+RUST_LOG=debug ./target/release/treadmill-sync
+
+# Or for systemd service, edit the service file:
+sudo nano /etc/systemd/system/treadmill-sync.service
+
+# Change Environment line to:
+Environment="RUST_LOG=debug"
+
+# Reload and restart
+sudo systemctl daemon-reload
+sudo systemctl restart treadmill-sync
+
+# View detailed logs
+sudo journalctl -u treadmill-sync -f
+```
+
+### Debug Output
+
+With `RUST_LOG=debug`, you'll see:
+
+**Raw Bluetooth Data:**
+```
+DEBUG FTMS RAW DATA (15 bytes): [86, 00, E8, 03, 64, 00, 00, 0A, 00, 64, 00, ...]
+DEBUG FTMS FLAGS: 0x0086 (binary: 0000000010000110)
+```
+
+**Parsed Values:**
+```
+DEBUG FTMS SPEED: raw=1000 (10.00 km/h = 2.78 m/s)
+DEBUG FTMS DISTANCE: 100 meters
+DEBUG FTMS INCLINE: raw=25 (2.5%)
+DEBUG FTMS ENERGY: 10 kcal
+DEBUG FTMS HEART RATE: 145 bpm
+DEBUG FTMS ELAPSED TIME: 120 seconds
+```
+
+**Summary:**
+```
+DEBUG FTMS PARSED SUMMARY: speed=Some(2.78) m/s, incline=Some(2.5)%,
+  distance=Some(100)m, calories=Some(10)kcal, hr=Some(145)bpm,
+  elapsed=Some(120)s, power=None W
+```
+
+### Debug API Endpoint
+
+Use `/api/debug/live` to get detailed real-time data:
+
+```bash
+curl http://raspberrypi.local:8080/api/debug/live | jq
+```
+
+Response includes:
+- Current workout info
+- Current metrics (latest values)
+- Last 20 samples with all fields
+- Total sample count
+
+Example:
+```json
+{
+  "workout": { "id": 42, "workout_uuid": "...", ... },
+  "current_metrics": {
+    "current_speed": 2.78,
+    "current_incline": 2.5,
+    "distance_so_far": 100,
+    "calories_so_far": 10,
+    "heart_rate": 145
+  },
+  "recent_samples": [
+    {
+      "timestamp": "2025-11-18T10:30:00Z",
+      "speed": 2.78,
+      "incline": 2.5,
+      "distance": 100,
+      "heart_rate": 145,
+      "calories": 10,
+      "cadence": null
+    },
+    ...
+  ],
+  "sample_count": 187
+}
+```
+
 ## iOS Companion App (Next Step)
 
 The iOS companion app will:

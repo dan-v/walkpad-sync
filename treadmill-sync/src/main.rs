@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     // Initialize Bluetooth manager
     let (bluetooth_manager, _status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
-        config.bluetooth.device_name_filter.clone(),
+        config.bluetooth.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
 
@@ -72,10 +72,12 @@ async fn main() -> Result<()> {
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let server_handle = tokio::spawn(async move {
-        axum::serve(listener, app)
+        if let Err(e) = axum::serve(listener, app)
             .with_graceful_shutdown(shutdown_signal())
             .await
-            .unwrap();
+        {
+            error!("Server error: {}", e);
+        }
     });
 
     info!("Treadmill Sync Service is running!");
@@ -91,7 +93,7 @@ async fn main() -> Result<()> {
             info!("Server task completed");
         }
         _ = signal::ctrl_c() => {
-            info!("Received Ctrl+C, shutting down");
+            info!("Received Ctrl+C, shutting down gracefully");
         }
     }
 
@@ -100,7 +102,7 @@ async fn main() -> Result<()> {
 }
 
 async fn shutdown_signal() {
-    signal::ctrl_c()
-        .await
-        .expect("Failed to install CTRL+C signal handler");
+    if let Err(e) = signal::ctrl_c().await {
+        error!("Failed to listen for shutdown signal: {}", e);
+    }
 }
