@@ -177,6 +177,8 @@ struct SettingsView: View {
             return .blue
         case .disconnected:
             return .secondary
+        case .disconnectedBLEOff:
+            return .orange
         case .error:
             return .red
         }
