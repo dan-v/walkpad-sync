@@ -1,17 +1,16 @@
-version: '3.8'
-
 services:
   treadmill-sync:
     build:
       context: ./treadmill-sync
       dockerfile: Dockerfile
     container_name: treadmill-sync
+    ports:
+      - "8080:8080"  # API server
     volumes:
       - ./data:/data
       - /var/run/dbus:/var/run/dbus  # For Bluetooth access
     devices:
       - /dev/bus/usb  # For Bluetooth adapter
-    network_mode: host  # Needed for Bluetooth
     privileged: true    # Needed for Bluetooth
     restart: unless-stopped
     environment:

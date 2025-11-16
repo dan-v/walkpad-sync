@@ -299,7 +299,10 @@ class TodayViewModel: ObservableObject {
 
             if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
                 streak += 1
-                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
+                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
+                    break
+                }
+                expectedDate = previousDate
             } else {
                 break
             }
