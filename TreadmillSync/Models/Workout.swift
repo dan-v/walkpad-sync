@@ -154,9 +154,12 @@ struct SamplesResponse: Codable {
 struct TreadmillSample: Codable, Identifiable {
     let timestamp: Int64 // Unix epoch
     let speed: Double?
-    let distanceTotal: Int64?
-    let caloriesTotal: Int64?
-    let stepsTotal: Int64?
+    let distanceTotal: Int64?  // Cumulative (for debugging)
+    let caloriesTotal: Int64?  // Cumulative (for debugging)
+    let stepsTotal: Int64?     // Cumulative (for debugging)
+    let distanceDelta: Int64?  // Delta since last sample (USE THIS!)
+    let caloriesDelta: Int64?  // Delta since last sample (USE THIS!)
+    let stepsDelta: Int64?     // Delta since last sample (USE THIS!)
 
     var id: Int64 { timestamp }
 
@@ -166,6 +169,9 @@ struct TreadmillSample: Codable, Identifiable {
         case distanceTotal = "distance_total"
         case caloriesTotal = "calories_total"
         case stepsTotal = "steps_total"
+        case distanceDelta = "distance_delta"
+        case caloriesDelta = "calories_delta"
+        case stepsDelta = "steps_delta"
     }
 
     var date: Date {

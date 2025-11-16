@@ -35,42 +35,82 @@ class HealthKitManager: ObservableObject {
 
     /// Delete any existing workouts for a specific date to prevent duplicates
     private func deleteExistingWorkouts(for date: String) async throws {
+        print("🗑️ Checking for existing workouts on \(date)")
+
         // Parse the date string to get start/end of day
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone.current
 
         guard let dayStart = formatter.date(from: date) else {
+            print("❌ Failed to parse date: \(date)")
             return
         }
 
         let calendar = Calendar.current
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            print("❌ Failed to calculate day end")
             return
         }
 
-        // Query for workouts in this date range with our app's metadata
+        // Query for workouts within this exact day
+        print("🔍 Querying workouts from \(dayStart) to \(dayEnd)")
+
+        // Query for workouts in this date range
         let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: .strictStartDate)
+        let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: [])
 
         // Create a query to find existing workouts
         let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
             let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
                 if let error = error {
+                    print("❌ Query error: \(error)")
                     continuation.resume(throwing: error)
                     return
                 }
 
                 let workouts = samples as? [HKWorkout] ?? []
+                print("📊 Found \(workouts.count) existing workouts")
                 continuation.resume(returning: workouts)
             }
 
             healthStore.execute(query)
         }
 
-        // Delete all found workouts
+        // Delete all samples (steps, distance, calories) in this date range
         if !workouts.isEmpty {
+            print("🗑️ Deleting samples (steps, distance, calories) from \(dayStart) to \(dayEnd)")
+
+            let sampleTypes = [
+                HKQuantityType.quantityType(forIdentifier: .stepCount),
+                HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning),
+                HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+            ].compactMap { $0 }
+
+            for sampleType in sampleTypes {
+                let samplePredicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: [])
+                let samples = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKSample], Error>) in
+                    let query = HKSampleQuery(sampleType: sampleType, predicate: samplePredicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        continuation.resume(returning: samples ?? [])
+                    }
+                    healthStore.execute(query)
+                }
+
+                if !samples.isEmpty {
+                    print("   Deleting \(samples.count) samples of type \(sampleType)")
+                    try await healthStore.delete(samples)
+                }
+            }
+
+            print("🗑️ Deleting \(workouts.count) workouts")
             try await healthStore.delete(workouts)
+            print("✅ Deleted successfully")
+        } else {
+            print("ℹ️ No existing workouts to delete")
         }
     }
 
@@ -88,11 +128,14 @@ class HealthKitManager: ObservableObject {
             throw HealthKitError.invalidData
         }
 
-        // Delete any existing workouts for this date first (prevents duplicates)
-        try await deleteExistingWorkouts(for: date)
-
         let startDate = firstSample.date
         let endDate = lastSample.date
+
+        print("📅 Workout times: \(startDate) to \(endDate)")
+        print("📊 Summary: \(steps) steps, \(distanceMeters)m, \(calories) cal from \(samples.count) samples")
+
+        // Delete any existing workouts for this date first (prevents duplicates)
+        try await deleteExistingWorkouts(for: date)
 
         // Create workout configuration
         let configuration = HKWorkoutConfiguration()
@@ -112,17 +155,16 @@ class HealthKitManager: ObservableObject {
         // Add samples to builder
         var workoutSamples: [HKSample] = []
 
-        // Process samples to create deltas (HealthKit wants changes, not cumulative values)
-        var lastDistance: Int64 = 0
-        var lastCalories: Int64 = 0
-        var lastSteps: Int64 = 0
+        // Use pre-calculated deltas from the backend (not cumulative values!)
+        var totalDistanceAdded: Double = 0
+        var totalCaloriesAdded: Double = 0
+        var totalStepsAdded: Double = 0
 
         for sample in samples {
             let sampleDate = sample.date
 
-            // Distance delta
-            if let distanceTotal = sample.distanceTotal, distanceTotal > lastDistance {
-                let delta = distanceTotal - lastDistance
+            // Use distance_delta (already calculated by backend)
+            if let delta = sample.distanceDelta, delta > 0 {
                 if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
                     let quantity = HKQuantity(unit: .meter(), doubleValue: Double(delta))
                     let distanceSample = HKQuantitySample(
@@ -132,13 +174,12 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(distanceSample)
+                    totalDistanceAdded += Double(delta)
                 }
-                lastDistance = distanceTotal
             }
 
-            // Energy delta
-            if let caloriesTotal = sample.caloriesTotal, caloriesTotal > lastCalories {
-                let delta = caloriesTotal - lastCalories
+            // Use calories_delta (already calculated by backend)
+            if let delta = sample.caloriesDelta, delta > 0 {
                 if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
                     let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: Double(delta))
                     let energySample = HKQuantitySample(
@@ -148,13 +189,12 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(energySample)
+                    totalCaloriesAdded += Double(delta)
                 }
-                lastCalories = caloriesTotal
             }
 
-            // Steps delta
-            if let stepsTotal = sample.stepsTotal, stepsTotal > lastSteps {
-                let delta = stepsTotal - lastSteps
+            // Use steps_delta (already calculated by backend)
+            if let delta = sample.stepsDelta, delta > 0 {
                 if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
                     let quantity = HKQuantity(unit: .count(), doubleValue: Double(delta))
                     let stepSample = HKQuantitySample(
@@ -164,10 +204,15 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(stepSample)
+                    totalStepsAdded += Double(delta)
                 }
-                lastSteps = stepsTotal
             }
         }
+
+        print("🔢 Created \(workoutSamples.count) HealthKit samples:")
+        print("   Distance: \(totalDistanceAdded)m (expected: \(distanceMeters)m)")
+        print("   Calories: \(totalCaloriesAdded) (expected: \(calories))")
+        print("   Steps: \(totalStepsAdded) (expected: \(steps))")
 
         // Add samples to workout
         if !workoutSamples.isEmpty {

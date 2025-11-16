@@ -32,15 +32,6 @@ pub struct DailySummary {
     pub steps: i64,
     pub avg_speed: f64,          // m/s
     pub max_speed: f64,
-    pub is_synced: bool,
-    pub synced_at: Option<i64>,  // Unix timestamp when synced (None if not synced)
-}
-
-/// Health sync record
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct HealthSync {
-    pub sync_date: String,       // YYYY-MM-DD
-    pub synced_at: i64,          // Unix timestamp
 }
 
 pub struct Storage {
@@ -129,12 +120,27 @@ impl Storage {
         Ok(samples)
     }
 
-    /// Get samples for a specific date (convenience method)
-    pub async fn get_samples_for_date(&self, date: NaiveDate) -> Result<Vec<TreadmillSample>> {
-        let start = date.and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
-            .and_utc();
-        let end = start + chrono::Duration::days(1);
+    /// Get samples for a specific date in the user's local timezone
+    ///
+    /// # Arguments
+    /// * `date` - The date in the user's local timezone
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
+    pub async fn get_samples_for_date(&self, date: NaiveDate, tz_offset_seconds: i32) -> Result<Vec<TreadmillSample>> {
+        // Convert local date to UTC timestamp range (same logic as get_daily_summary)
+        let start_local = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
+        let end_local = start_local + chrono::Duration::days(1);
+
+        // Apply timezone offset to get UTC timestamps
+        let start_unix = start_local.and_utc().timestamp() - tz_offset_seconds as i64;
+        let end_unix = end_local.and_utc().timestamp() - tz_offset_seconds as i64;
+
+        // Convert back to DateTime<Utc>
+        let start = DateTime::from_timestamp(start_unix, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid start timestamp"))?;
+        let end = DateTime::from_timestamp(end_unix, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid end timestamp"))?;
+
         self.get_samples_by_date_range(start, end).await
     }
 
@@ -193,14 +199,9 @@ impl Storage {
         let first_timestamp: i64 = summary.get("first_timestamp");
         let last_timestamp: i64 = summary.get("last_timestamp");
 
-        // Calculate duration based on number of active samples (speed > 0)
-        // Each sample represents ~1 second of activity, which is more accurate than
-        // using timestamp difference (which would count idle time if treadmill is left on)
-        let duration_seconds = total_samples;
-
-        // Check if this date has been synced and get timestamp
-        let synced_at = self.get_sync_timestamp(&date_str).await?;
-        let is_synced = synced_at.is_some();
+        // Calculate duration as actual time elapsed (last_timestamp - first_timestamp)
+        // Since we're only querying samples where speed > 0, this represents actual active time
+        let duration_seconds = last_timestamp - first_timestamp;
 
         Ok(Some(DailySummary {
             date: date_str,
@@ -211,8 +212,6 @@ impl Storage {
             steps,
             avg_speed,
             max_speed,
-            is_synced,
-            synced_at,
         }))
     }
 
@@ -237,52 +236,6 @@ impl Storage {
 
         let dates = rows.iter().map(|row| row.get::<String, _>("date")).collect();
         Ok(dates)
-    }
-
-    /// Mark a date as synced to Apple Health
-    pub async fn mark_date_synced(&self, date: &str) -> Result<()> {
-        let synced_at = Utc::now().timestamp();
-
-        sqlx::query(
-            "INSERT OR REPLACE INTO health_syncs (sync_date, synced_at) VALUES (?, ?)"
-        )
-        .bind(date)
-        .bind(synced_at)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    /// Check if a date has been synced to Apple Health
-    pub async fn is_date_synced(&self, date: &str) -> Result<bool> {
-        let row = sqlx::query("SELECT sync_date FROM health_syncs WHERE sync_date = ?")
-            .bind(date)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(row.is_some())
-    }
-
-    /// Get sync info for a date (returns timestamp if synced)
-    pub async fn get_sync_timestamp(&self, date: &str) -> Result<Option<i64>> {
-        let row = sqlx::query("SELECT synced_at FROM health_syncs WHERE sync_date = ?")
-            .bind(date)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(row.map(|r| r.get("synced_at")))
-    }
-
-    /// Get all synced dates
-    pub async fn get_synced_dates(&self) -> Result<Vec<HealthSync>> {
-        let syncs = sqlx::query_as::<_, HealthSync>(
-            "SELECT sync_date, synced_at FROM health_syncs ORDER BY sync_date DESC"
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(syncs)
     }
 
     /// Get the latest sample (for debugging/status)
