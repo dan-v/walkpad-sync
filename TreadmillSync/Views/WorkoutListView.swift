@@ -1,20 +1,25 @@
 import SwiftUI
+import Combine
 
 struct WorkoutListView: View {
     @EnvironmentObject var syncManager: SyncManager
 
-    @State private var liveWorkout: LiveWorkoutResponse?
-    @State private var liveWorkoutTimer: Timer?
+    @State private var liveWorkoutData: LiveWorkoutResponse?
+    @State private var updateTask: Task<Void, Never>?
+    @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Live Workout Banner
-                if let liveWorkout = liveWorkout {
-                    LiveWorkoutBanner(liveData: liveWorkout)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+                // Live Workout Banner (tappable)
+                if let liveData = liveWorkoutData, liveData.workout != nil {
+                    NavigationLink(destination: LiveWorkoutDetailView(liveData: liveData)) {
+                        LiveWorkoutBanner(liveData: liveData)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
                 }
 
                 // Workout List
@@ -76,43 +81,63 @@ struct WorkoutListView: View {
                 Text(syncManager.syncSuccessMessage ?? "")
             }
             .onAppear {
-                startLiveWorkoutPolling()
+                setupLiveWorkoutUpdates()
             }
             .onDisappear {
-                stopLiveWorkoutPolling()
+                updateTask?.cancel()
+                cancellables.removeAll()
             }
         }
     }
 
-    // MARK: - Live Workout Polling
+    // MARK: - Live Workout via WebSocket
 
-    private func startLiveWorkoutPolling() {
-        // Fetch immediately
-        fetchLiveWorkout()
+    private func setupLiveWorkoutUpdates() {
+        // Watch for changes to liveWorkout from WebSocket
+        syncManager.$liveWorkout
+            .sink { workout in
+                Task {
+                    if workout != nil {
+                        // WebSocket says there's an active workout - fetch full data with metrics
+                        await fetchLiveWorkoutData()
+                        startPeriodicUpdates()
+                    } else {
+                        // No active workout
+                        liveWorkoutData = nil
+                        updateTask?.cancel()
+                    }
+                }
+            }
+            .store(in: &cancellables)
 
-        // Then poll every 2 seconds
-        liveWorkoutTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            fetchLiveWorkout()
+        // Initial fetch if there's already a live workout
+        if syncManager.liveWorkout != nil {
+            Task {
+                await fetchLiveWorkoutData()
+                startPeriodicUpdates()
+            }
         }
     }
 
-    private func stopLiveWorkoutPolling() {
-        liveWorkoutTimer?.invalidate()
-        liveWorkoutTimer = nil
+    private func startPeriodicUpdates() {
+        updateTask?.cancel()
+
+        updateTask = Task {
+            while !Task.isCancelled && syncManager.liveWorkout != nil {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // Update every 2 seconds
+                await fetchLiveWorkoutData()
+            }
+        }
     }
 
-    private func fetchLiveWorkout() {
+    private func fetchLiveWorkoutData() async {
         guard syncManager.isConnected else {
-            liveWorkout = nil
+            liveWorkoutData = nil
             return
         }
 
-        Task {
-            let data = await syncManager.fetchLiveWorkout()
-            await MainActor.run {
-                liveWorkout = data
-            }
-        }
+        let data = await syncManager.fetchLiveWorkout()
+        liveWorkoutData = data
     }
 
     // Group workouts by date

@@ -13,6 +13,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
+use crate::api::WorkoutEvent;
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use ftms::{
@@ -32,6 +33,7 @@ pub enum ConnectionStatus {
 
 #[derive(Debug, Clone)]
 pub struct WorkoutMetrics {
+    pub workout_id: Option<i64>,
     pub speed: Option<f64>,
     pub distance: Option<u32>,
     pub steps: Option<u16>,
@@ -44,6 +46,7 @@ pub struct BluetoothManager {
     storage: Arc<Storage>,
     config: BluetoothConfig,
     status_tx: broadcast::Sender<ConnectionStatus>,
+    event_tx: broadcast::Sender<WorkoutEvent>,
     current_workout_id: Arc<RwLock<Option<i64>>>,
     workout_baseline: Arc<RwLock<Option<WorkoutBaseline>>>,
 }
@@ -56,13 +59,18 @@ struct WorkoutBaseline {
 }
 
 impl BluetoothManager {
-    pub fn new(storage: Arc<Storage>, config: BluetoothConfig) -> (Self, broadcast::Receiver<ConnectionStatus>) {
+    pub fn new(
+        storage: Arc<Storage>,
+        config: BluetoothConfig,
+        event_tx: broadcast::Sender<WorkoutEvent>,
+    ) -> (Self, broadcast::Receiver<ConnectionStatus>) {
         let (status_tx, status_rx) = broadcast::channel(16);
 
         (Self {
             storage,
             config,
             status_tx,
+            event_tx,
             current_workout_id: Arc::new(RwLock::new(None)),
             workout_baseline: Arc::new(RwLock::new(None)),
         }, status_rx)
@@ -613,6 +621,12 @@ impl BluetoothManager {
         *current = Some(workout_id);
 
         info!("Created workout with ID: {}", workout_id);
+
+        // Fetch the created workout and emit event
+        if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
+            let _ = self.event_tx.send(WorkoutEvent::WorkoutStarted { workout });
+        }
+
         Ok(())
     }
 
@@ -655,6 +669,14 @@ impl BluetoothManager {
                 delta_calories,
                 delta_steps, // cumulative step count from workout start
             ).await?;
+
+            // Emit sample event (fetch the latest sample)
+            if let Ok(Some(sample)) = self.storage.get_latest_sample(workout_id).await {
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutSample {
+                    workout_id,
+                    sample,
+                });
+            }
         }
 
         Ok(())
@@ -684,6 +706,10 @@ impl BluetoothManager {
                 Err(e) => {
                     error!("Failed to get workout aggregates: {}", e);
                     self.storage.mark_workout_failed(workout_id, "Failed to compute aggregates").await?;
+                    let _ = self.event_tx.send(WorkoutEvent::WorkoutFailed {
+                        workout_id,
+                        reason: "Failed to compute aggregates".to_string(),
+                    });
                     return Ok(());
                 }
             };
@@ -713,12 +739,20 @@ impl BluetoothManager {
                     _ => {
                         error!("Failed to parse timestamps for workout {}", workout_id);
                         self.storage.mark_workout_failed(workout_id, "Invalid timestamps").await?;
+                        let _ = self.event_tx.send(WorkoutEvent::WorkoutFailed {
+                            workout_id,
+                            reason: "Invalid timestamps".to_string(),
+                        });
                         return Ok(());
                     }
                 }
             } else {
                 error!("Missing timestamps for workout {}", workout_id);
                 self.storage.mark_workout_failed(workout_id, "Missing timestamps").await?;
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutFailed {
+                    workout_id,
+                    reason: "Missing timestamps".to_string(),
+                });
                 return Ok(());
             };
 
@@ -753,8 +787,18 @@ impl BluetoothManager {
                 agg.total_calories,
             ).await {
                 error!("Failed to complete workout {}: {}", workout_id, e);
-                self.storage.mark_workout_failed(workout_id, &format!("DB error: {}", e)).await?;
+                let reason = format!("DB error: {}", e);
+                self.storage.mark_workout_failed(workout_id, &reason).await?;
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutFailed {
+                    workout_id,
+                    reason,
+                });
                 return Ok(());
+            }
+
+            // Fetch completed workout and emit success event
+            if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutCompleted { workout });
             }
 
             // Log success
@@ -793,6 +837,7 @@ impl BluetoothManager {
                 };
 
                 return Ok(Some(WorkoutMetrics {
+                    workout_id: Some(workout_id),
                     speed: last_sample.speed,
                     distance: last_sample.distance.map(|d| d as u32),
                     steps: last_sample.cadence.map(|s| s as u16), // cadence column stores steps

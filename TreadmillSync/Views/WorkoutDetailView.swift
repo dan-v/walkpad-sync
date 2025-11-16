@@ -1,9 +1,14 @@
 import SwiftUI
+import Charts
 
 struct WorkoutDetailView: View {
     @EnvironmentObject var syncManager: SyncManager
     @Environment(\.dismiss) var dismiss
     let workout: Workout
+
+    @State private var samples: [WorkoutSample] = []
+    @State private var isLoadingSamples = false
+    @State private var showingCharts = false
 
     var body: some View {
         ScrollView {
@@ -19,11 +24,11 @@ struct WorkoutDetailView: View {
                 }
                 .padding(.top, 20)
 
-                // Stats Grid (2x2)
+                // Stats Grid
                 LazyVGrid(columns: [
                     GridItem(.flexible()),
                     GridItem(.flexible())
-                ], spacing: 16) {
+                ], spacing: 12) {
                     StatCard(
                         icon: "figure.walk",
                         label: "Distance",
@@ -51,8 +56,79 @@ struct WorkoutDetailView: View {
                         value: formatSpeed(),
                         color: .green
                     )
+
+                    if let maxSpeed = workout.maxSpeed {
+                        StatCard(
+                            icon: "hare.fill",
+                            label: "Max Speed",
+                            value: String(format: "%.1f mph", maxSpeed * 2.23694),
+                            color: .red
+                        )
+                    }
+
+                    if let avgPace = calculatePace() {
+                        StatCard(
+                            icon: "timer",
+                            label: "Avg Pace",
+                            value: avgPace,
+                            color: .cyan
+                        )
+                    }
                 }
                 .padding(.horizontal)
+
+                // Charts Section
+                if showingCharts && !samples.isEmpty {
+                    VStack(spacing: 20) {
+                        // Speed Chart
+                        ChartSection(title: "Speed Over Time", icon: "speedometer", color: .green) {
+                            Chart(samples) { sample in
+                                if let speed = sample.speed, let date = sample.date {
+                                    LineMark(
+                                        x: .value("Time", date),
+                                        y: .value("Speed", speed * 2.23694) // Convert to mph
+                                    )
+                                    .foregroundStyle(.green)
+                                    .interpolationMethod(.catmullRom)
+                                }
+                            }
+                            .chartYAxis {
+                                AxisMarks(position: .leading)
+                            }
+                            .chartXAxis {
+                                AxisMarks(values: .automatic(desiredCount: 4))
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                }
+
+                // Load Charts Button
+                if !showingCharts {
+                    Button {
+                        Task {
+                            await loadSamples()
+                        }
+                    } label: {
+                        HStack {
+                            if isLoadingSamples {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "chart.xyaxis.line")
+                            }
+                            Text(isLoadingSamples ? "Loading Charts..." : "Show Detailed Charts")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+                    .disabled(isLoadingSamples)
+                    .padding(.horizontal)
+                }
 
                 // Action Buttons
                 VStack(spacing: 12) {
@@ -97,6 +173,22 @@ struct WorkoutDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    private func loadSamples() async {
+        isLoadingSamples = true
+        defer { isLoadingSamples = false }
+
+        do {
+            let apiClient = APIClient(config: syncManager.serverConfig)
+            let response = try await apiClient.fetchWorkoutSamples(workoutId: workout.id)
+            samples = response
+            withAnimation {
+                showingCharts = true
+            }
+        } catch {
+            print("Failed to load samples: \(error)")
+        }
+    }
+
     private func formatSteps() -> String {
         guard let steps = workout.totalSteps else { return "N/A" }
         return "\(steps)"
@@ -106,6 +198,39 @@ struct WorkoutDetailView: View {
         guard let avgSpeed = workout.avgSpeed else { return "N/A" }
         let mph = avgSpeed * 2.23694
         return String(format: "%.1f mph", mph)
+    }
+
+    private func calculatePace() -> String? {
+        guard let avgSpeed = workout.avgSpeed, avgSpeed > 0 else { return nil }
+        let milesPerHour = avgSpeed * 2.23694
+        let minutesPerMile = 60.0 / milesPerHour
+        let minutes = Int(minutesPerMile)
+        let seconds = Int((minutesPerMile - Double(minutes)) * 60)
+        return String(format: "%d:%02d /mi", minutes, seconds)
+    }
+}
+
+struct ChartSection<Content: View>: View {
+    let title: String
+    let icon: String
+    let color: Color
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                Text(title)
+                    .font(.headline)
+            }
+
+            content
+                .frame(height: 200)
+                .padding()
+                .background(Color(.systemGray6))
+                .cornerRadius(12)
+        }
     }
 }
 
