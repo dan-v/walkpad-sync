@@ -1,108 +1,140 @@
 import SwiftUI
 
 struct WorkoutDetailView: View {
+    @EnvironmentObject var syncManager: SyncManager
+    @Environment(\.dismiss) var dismiss
     let workout: Workout
 
     var body: some View {
-        List {
-            // Summary Section
-            Section("Summary") {
-                DetailRow(icon: "calendar", label: "Date", value: workout.dateFormatted)
-                DetailRow(icon: "clock", label: "Duration", value: workout.durationFormatted)
-                DetailRow(icon: "figure.walk", label: "Distance", value: workout.distanceFormatted)
-                DetailRow(icon: "flame", label: "Calories", value: workout.caloriesFormatted)
-            }
-
-            // Performance Section
-            if workout.avgSpeed != nil || workout.maxSpeed != nil {
-                Section("Performance") {
-                    if let avgSpeed = workout.avgSpeed {
-                        DetailRow(
-                            icon: "speedometer",
-                            label: "Avg Speed",
-                            value: String(format: "%.2f mph", avgSpeed * 2.23694)
-                        )
-                    }
-                    if let maxSpeed = workout.maxSpeed {
-                        DetailRow(
-                            icon: "speedometer",
-                            label: "Max Speed",
-                            value: String(format: "%.2f mph", maxSpeed * 2.23694)
-                        )
-                    }
-                    if let avgIncline = workout.avgIncline {
-                        DetailRow(
-                            icon: "arrow.up.right",
-                            label: "Avg Incline",
-                            value: String(format: "%.1f%%", avgIncline)
-                        )
-                    }
-                    if let maxIncline = workout.maxIncline {
-                        DetailRow(
-                            icon: "arrow.up.right",
-                            label: "Max Incline",
-                            value: String(format: "%.1f%%", maxIncline)
-                        )
-                    }
-                }
-            }
-
-            // Heart Rate Section
-            if workout.avgHeartRate != nil || workout.maxHeartRate != nil {
-                Section("Heart Rate") {
-                    if let avgHR = workout.avgHeartRate {
-                        DetailRow(
-                            icon: "heart",
-                            label: "Average",
-                            value: "\(avgHR) bpm",
-                            iconColor: .red
-                        )
-                    }
-                    if let maxHR = workout.maxHeartRate {
-                        DetailRow(
-                            icon: "heart.fill",
-                            label: "Maximum",
-                            value: "\(maxHR) bpm",
-                            iconColor: .red
-                        )
-                    }
-                }
-            }
-
-            // Status Section
-            Section {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("Synced to Apple Health")
+        ScrollView {
+            VStack(spacing: 20) {
+                // Date & Time
+                VStack(spacing: 4) {
+                    Text(workout.dateFormatted)
+                        .font(.title2)
+                        .fontWeight(.bold)
+                    Text(workout.durationFormatted)
+                        .font(.title3)
                         .foregroundColor(.secondary)
                 }
+                .padding(.top, 20)
+
+                // Stats Grid (2x2)
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 16) {
+                    StatCard(
+                        icon: "figure.walk",
+                        label: "Distance",
+                        value: workout.distanceFormatted,
+                        color: .blue
+                    )
+
+                    StatCard(
+                        icon: "shoeprints.fill",
+                        label: "Steps",
+                        value: formatSteps(),
+                        color: .purple
+                    )
+
+                    StatCard(
+                        icon: "flame.fill",
+                        label: "Calories",
+                        value: workout.caloriesFormatted,
+                        color: .orange
+                    )
+
+                    StatCard(
+                        icon: "speedometer",
+                        label: "Avg Speed",
+                        value: formatSpeed(),
+                        color: .green
+                    )
+                }
+                .padding(.horizontal)
+
+                // Action Buttons
+                VStack(spacing: 12) {
+                    Button {
+                        Task {
+                            await syncManager.syncWorkout(workout)
+                            dismiss()
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: "heart.circle.fill")
+                                .font(.title3)
+                            Text("Add to Apple Health")
+                                .fontWeight(.semibold)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.green)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
+                    }
+
+                    Button(role: .destructive) {
+                        Task {
+                            await syncManager.deleteWorkout(workout)
+                            dismiss()
+                        }
+                    } label: {
+                        Text("Delete Workout")
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(Color(.systemGray5))
+                            .foregroundColor(.red)
+                            .cornerRadius(12)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom, 20)
             }
         }
-        .navigationTitle("Workout Details")
+        .navigationTitle("Workout")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private func formatSteps() -> String {
+        guard let steps = workout.totalSteps else { return "N/A" }
+        return "\(steps)"
+    }
+
+    private func formatSpeed() -> String {
+        guard let avgSpeed = workout.avgSpeed else { return "N/A" }
+        let mph = avgSpeed * 2.23694
+        return String(format: "%.1f mph", mph)
     }
 }
 
-struct DetailRow: View {
+struct StatCard: View {
     let icon: String
     let label: String
     let value: String
-    var iconColor: Color = .blue
+    let color: Color
 
     var body: some View {
-        HStack {
-            Label {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 32))
+                .foregroundColor(color)
+
+            VStack(spacing: 4) {
+                Text(value)
+                    .font(.title2)
+                    .fontWeight(.bold)
+
                 Text(label)
-            } icon: {
-                Image(systemName: icon)
-                    .foregroundColor(iconColor)
-                    .frame(width: 24)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
-            Spacer()
-            Text(value)
-                .foregroundColor(.secondary)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20)
+        .background(Color(.systemGray6))
+        .cornerRadius(12)
     }
 }
 
@@ -115,14 +147,12 @@ struct DetailRow: View {
             endTime: ISO8601DateFormatter().string(from: Date().addingTimeInterval(1800)),
             totalDuration: 1800,
             totalDistance: 3200,
+            totalSteps: 2400,
             avgSpeed: 1.78,
             maxSpeed: 2.5,
-            avgIncline: 2.5,
-            maxIncline: 5.0,
             totalCalories: 250,
-            avgHeartRate: 145,
-            maxHeartRate: 165,
             samplesUrl: "/api/workouts/1/samples"
         ))
+        .environmentObject(SyncManager())
     }
 }

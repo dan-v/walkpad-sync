@@ -2,130 +2,73 @@ import SwiftUI
 
 struct LiveWorkoutBanner: View {
     let liveData: LiveWorkoutResponse
-    @State private var isExpanded = false
 
     var body: some View {
         VStack(spacing: 0) {
-            // Main banner
-            Button {
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    isExpanded.toggle()
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    // Pulsing indicator
-                    Circle()
-                        .fill(Color.green)
-                        .frame(width: 10, height: 10)
-                        .overlay(
-                            Circle()
-                                .stroke(Color.green.opacity(0.3), lineWidth: 3)
-                                .scaleEffect(1.4)
-                        )
+            // Header
+            HStack(spacing: 8) {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
 
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Workout in Progress")
-                            .font(.subheadline)
-                            .fontWeight(.semibold)
-                            .foregroundColor(.primary)
+                Text("Workout in Progress")
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.secondary)
 
-                        if let metrics = liveData.currentMetrics {
-                            HStack(spacing: 16) {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "speedometer")
-                                        .font(.caption2)
-                                        .foregroundColor(.green)
-                                    Text("\(metrics.speedFormatted) mph")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
+                Spacer()
 
-                                HStack(spacing: 4) {
-                                    Image(systemName: "figure.walk")
-                                        .font(.caption2)
-                                        .foregroundColor(.blue)
-                                    Text("\(metrics.distanceFormatted) mi")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-
-                                HStack(spacing: 4) {
-                                    Image(systemName: "flame.fill")
-                                        .font(.caption2)
-                                        .foregroundColor(.orange)
-                                    Text("\(metrics.caloriesFormatted) cal")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer()
-
-                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        .font(.caption)
+                if let workout = liveData.workout, let start = workout.start {
+                    Text(timeAgo(from: start))
+                        .font(.caption2)
                         .foregroundColor(.secondary)
                 }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.green.opacity(0.1))
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
 
-            // Expanded details
-            if isExpanded, let metrics = liveData.currentMetrics {
-                VStack(spacing: 16) {
-                    // Metrics grid
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 16) {
-                        MetricCard(
-                            icon: "speedometer",
-                            label: "Speed",
-                            value: metrics.speedFormatted,
-                            unit: "mph",
-                            color: .blue
-                        )
+            // Metrics Grid (2x2)
+            if let metrics = liveData.currentMetrics {
+                LazyVGrid(columns: [
+                    GridItem(.flexible()),
+                    GridItem(.flexible())
+                ], spacing: 12) {
+                    CompactMetricCard(
+                        icon: "speedometer",
+                        value: metrics.speedFormatted,
+                        unit: "mph",
+                        color: .green
+                    )
 
-                        MetricCard(
-                            icon: "figure.walk",
-                            label: "Distance",
-                            value: metrics.distanceFormatted,
-                            unit: "mi",
-                            color: .green
-                        )
+                    CompactMetricCard(
+                        icon: "figure.walk",
+                        value: metrics.distanceFormatted,
+                        unit: "mi",
+                        color: .blue
+                    )
 
-                        MetricCard(
-                            icon: "flame.fill",
-                            label: "Calories",
-                            value: metrics.caloriesFormatted,
-                            unit: "kcal",
-                            color: .orange
-                        )
-                    }
+                    CompactMetricCard(
+                        icon: "shoeprints.fill",
+                        value: metrics.stepsFormatted,
+                        unit: "steps",
+                        color: .purple
+                    )
 
-                    // Start time
-                    if let workout = liveData.workout, let start = workout.start {
-                        HStack {
-                            Image(systemName: "clock")
-                                .foregroundColor(.secondary)
-                            Text("Started \(timeAgo(from: start))")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                    }
+                    CompactMetricCard(
+                        icon: "flame.fill",
+                        value: metrics.caloriesFormatted,
+                        unit: "cal",
+                        color: .orange
+                    )
                 }
-                .padding()
-                .background(Color(UIColor.secondarySystemBackground))
+                .padding(.horizontal, 16)
+                .padding(.bottom, 12)
             }
         }
-        .background(Color(UIColor.systemBackground))
+        .background(Color.green.opacity(0.08))
         .clipShape(RoundedRectangle(cornerRadius: 12))
-        .shadow(color: Color.black.opacity(0.1), radius: 5, x: 0, y: 2)
+        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
     }
 
     private func timeAgo(from date: Date) -> String {
@@ -134,64 +77,39 @@ struct LiveWorkoutBanner: View {
         let hours = minutes / 60
 
         if hours > 0 {
-            return "\(hours)h \(minutes % 60)m ago"
+            return "\(hours)h \(minutes % 60)m"
         } else if minutes > 0 {
-            return "\(minutes)m ago"
+            return "\(minutes)m"
         } else {
-            return "just now"
+            return "now"
         }
     }
 }
 
-struct MetricBadge: View {
+struct CompactMetricCard: View {
     let icon: String
-    let value: String
-    let unit: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption)
-            Text(value)
-                .font(.system(.body, design: .rounded))
-                .fontWeight(.semibold)
-            Text(unit)
-                .font(.caption2)
-        }
-        .foregroundColor(.secondary)
-    }
-}
-
-struct MetricCard: View {
-    let icon: String
-    let label: String
     let value: String
     let unit: String
     let color: Color
 
     var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
-
-            VStack(spacing: 2) {
+        VStack(spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.caption)
+                    .foregroundColor(color)
                 Text(value)
-                    .font(.system(.title2, design: .rounded))
-                    .fontWeight(.bold)
-
-                Text(unit)
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
             }
-
-            Text(label)
-                .font(.caption)
+            Text(unit)
+                .font(.caption2)
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-        .padding()
-        .background(Color(UIColor.tertiarySystemBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.vertical, 10)
+        .background(Color(UIColor.systemBackground))
+        .cornerRadius(8)
     }
 }

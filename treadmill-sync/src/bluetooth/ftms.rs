@@ -63,6 +63,7 @@ pub struct TreadmillData {
     pub speed: Option<f64>,           // m/s
     pub incline: Option<f64>,         // percentage
     pub distance: Option<u32>,        // meters
+    pub steps: Option<u16>,           // step count
     pub total_energy: Option<u16>,    // kcal
     pub energy_per_hour: Option<u16>, // kcal/hour
     pub heart_rate: Option<u8>,       // bpm
@@ -363,13 +364,8 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
                 return Err(anyhow!("LifeSpan steps data too short"));
             }
             let steps = u16::from_le_bytes([data[3], data[4]]);
-
-            // Note: steps are not directly used in TreadmillData, but we log them
             debug!("LifeSpan steps: {}", steps);
-
-            // We could derive distance from steps if distance query fails
-            // Typical step length ~0.762 meters (2.5 feet)
-            // But we'll rely on the distance query primarily
+            result.steps = Some(steps);
         }
 
         LifeSpanQuery::Time => {

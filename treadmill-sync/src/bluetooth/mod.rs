@@ -33,10 +33,9 @@ pub enum ConnectionStatus {
 #[derive(Debug, Clone)]
 pub struct WorkoutMetrics {
     pub speed: Option<f64>,
-    pub incline: Option<f64>,
     pub distance: Option<u32>,
+    pub steps: Option<u16>,
     pub calories: Option<u16>,
-    pub heart_rate: Option<u8>,
     #[allow(dead_code)]
     pub elapsed_time: Option<u16>,
 }
@@ -52,6 +51,7 @@ pub struct BluetoothManager {
 #[derive(Debug, Clone)]
 struct WorkoutBaseline {
     start_distance: Option<u32>,
+    start_steps: Option<u16>,
     start_calories: Option<u16>,
 }
 
@@ -216,6 +216,7 @@ impl BluetoothManager {
         let mut zero_speed_count = 0;
         let zero_speed_threshold = self.config.workout_end_timeout_secs;
         let mut last_distance: Option<u32> = None;
+        let mut last_steps: Option<u16> = None;
         let mut last_calories: Option<u16> = None;
         let mut reset_detection_count = 0; // Track consecutive reset detections
         // Track distance/calories from 10 samples ago to detect slow updates
@@ -297,6 +298,9 @@ impl BluetoothManager {
                                 if partial_data.distance.is_some() {
                                     acc.distance = partial_data.distance;
                                 }
+                                if partial_data.steps.is_some() {
+                                    acc.steps = partial_data.steps;
+                                }
                                 if partial_data.total_energy.is_some() {
                                     acc.total_energy = partial_data.total_energy;
                                 }
@@ -338,8 +342,8 @@ impl BluetoothManager {
             };
 
             let current_speed = data.speed.unwrap_or(0.0);
-            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
-                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.total_energy, sample_count);
+            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, steps={:?}, calories={:?}kcal, samples={}",
+                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.steps, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
                     if workout_started {
@@ -397,6 +401,7 @@ impl BluetoothManager {
                                 zero_speed_count = 0;
                                 reset_detection_count = 0;
                                 last_distance = None;
+                                last_steps = None;
                                 last_calories = None;
                                 distance_10_samples_ago = None;
                                 calories_10_samples_ago = None;
@@ -415,10 +420,11 @@ impl BluetoothManager {
                                     let mut baseline = self.workout_baseline.write().await;
                                     *baseline = Some(WorkoutBaseline {
                                         start_distance: data.distance,
+                                        start_steps: data.steps,
                                         start_calories: data.total_energy,
                                     });
-                                    info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
-                                          data.distance, data.total_energy);
+                                    info!("New workout baseline after reset: distance={:?}m, steps={:?}, calories={:?}kcal",
+                                          data.distance, data.steps, data.total_energy);
                                 }
                             } else {
                                 debug!("Reset detection count: {}/3", reset_detection_count);
@@ -448,10 +454,11 @@ impl BluetoothManager {
                         let mut baseline = self.workout_baseline.write().await;
                         *baseline = Some(WorkoutBaseline {
                             start_distance: data.distance,
+                            start_steps: data.steps,
                             start_calories: data.total_energy,
                         });
-                        info!("Workout baseline: distance={:?}m, calories={:?}kcal",
-                              data.distance, data.total_energy);
+                        info!("Workout baseline: distance={:?}m, steps={:?}, calories={:?}kcal",
+                              data.distance, data.steps, data.total_energy);
                     }
 
                     // Record sample if workout is active
@@ -461,6 +468,10 @@ impl BluetoothManager {
                         if sanitized_data.distance == Some(0) && last_distance.is_some() {
                             debug!("Replacing distance=0 with last known good: {:?}", last_distance);
                             sanitized_data.distance = last_distance;
+                        }
+                        if sanitized_data.steps == Some(0) && last_steps.is_some() {
+                            debug!("Replacing steps=0 with last known good: {:?}", last_steps);
+                            sanitized_data.steps = last_steps;
                         }
                         if sanitized_data.total_energy == Some(0) && last_calories.is_some() {
                             debug!("Replacing calories=0 with last known good: {:?}", last_calories);
@@ -549,6 +560,12 @@ impl BluetoothManager {
                         }
                         // else: ignore 0 readings during active workout
                     }
+                    if let Some(steps) = data.steps {
+                        if steps > 0 || !workout_started {
+                            last_steps = data.steps;
+                        }
+                        // else: ignore 0 readings during active workout
+                    }
                     if let Some(cal) = data.total_energy {
                         if cal > 0 || !workout_started {
                             last_calories = data.total_energy;
@@ -607,8 +624,12 @@ impl BluetoothManager {
 
             // Calculate deltas from workout baseline
             let baseline = self.workout_baseline.read().await;
-            let (delta_distance, delta_calories) = if let Some(ref baseline) = *baseline {
+            let (delta_distance, delta_steps, delta_calories) = if let Some(ref baseline) = *baseline {
                 let delta_dist = match (data.distance, baseline.start_distance) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                let delta_step = match (data.steps, baseline.start_steps) {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
@@ -616,21 +637,23 @@ impl BluetoothManager {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
-                (delta_dist, delta_cal)
+                (delta_dist, delta_step, delta_cal)
             } else {
                 // No baseline yet - store raw values (shouldn't happen normally)
-                (data.distance.map(|d| d as i64), data.total_energy.map(|e| e as i64))
+                (
+                    data.distance.map(|d| d as i64),
+                    data.steps.map(|s| s as i64),
+                    data.total_energy.map(|e| e as i64)
+                )
             };
 
             self.storage.add_sample(
                 workout_id,
                 timestamp,
                 data.speed,
-                data.incline,
                 delta_distance,
-                data.heart_rate.map(|hr| hr as i64),
                 delta_calories,
-                None, // cadence not available from treadmill
+                delta_steps, // cumulative step count from workout start
             ).await?;
         }
 
@@ -724,13 +747,10 @@ impl BluetoothManager {
                 end_time,
                 duration,
                 agg.total_distance,
+                agg.total_steps,
                 agg.avg_speed,
                 agg.max_speed,
-                agg.avg_incline,
-                agg.max_incline,
                 agg.total_calories,
-                agg.avg_heart_rate,
-                agg.max_heart_rate,
             ).await {
                 error!("Failed to complete workout {}: {}", workout_id, e);
                 self.storage.mark_workout_failed(workout_id, &format!("DB error: {}", e)).await?;
@@ -741,13 +761,10 @@ impl BluetoothManager {
             info!("Workout {} completed successfully:", workout_id);
             info!("  Duration: {}:{:02} ({} seconds)", duration / 60, duration % 60, duration);
             info!("  Distance: {} meters ({:.2} km)", agg.total_distance, agg.total_distance as f64 / 1000.0);
+            info!("  Steps: {}", agg.total_steps);
             info!("  Avg Speed: {:.2} m/s ({:.2} km/h)", agg.avg_speed, agg.avg_speed * 3.6);
             info!("  Max Speed: {:.2} m/s ({:.2} km/h)", agg.max_speed, agg.max_speed * 3.6);
-            info!("  Avg Incline: {:.1}% (Max: {:.1}%)", agg.avg_incline, agg.max_incline);
             info!("  Calories: {} kcal", agg.total_calories);
-            if let Some(avg_hr) = agg.avg_heart_rate {
-                info!("  Heart Rate: {} avg / {} max bpm", avg_hr, agg.max_heart_rate.unwrap_or(0));
-            }
             info!("  Samples: {}", agg.sample_count);
         }
 
@@ -777,10 +794,9 @@ impl BluetoothManager {
 
                 return Ok(Some(WorkoutMetrics {
                     speed: last_sample.speed,
-                    incline: last_sample.incline,
                     distance: last_sample.distance.map(|d| d as u32),
+                    steps: last_sample.cadence.map(|s| s as u16), // cadence column stores steps
                     calories: last_sample.calories.map(|c| c as u16),
-                    heart_rate: last_sample.heart_rate.map(|hr| hr as u8),
                     elapsed_time,
                 }));
             }
