@@ -33,19 +33,3 @@ struct ServerConfig: Codable {
         }
     }
 }
-
-// Device ID management
-extension UserDefaults {
-    private static let deviceIDKey = "deviceID"
-
-    static var deviceID: String {
-        if let existing = standard.string(forKey: deviceIDKey) {
-            return existing
-        }
-
-        // Generate stable device ID on first launch
-        let newID = UUID().uuidString
-        standard.set(newID, forKey: deviceIDKey)
-        return newID
-    }
-}

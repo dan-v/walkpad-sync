@@ -119,7 +119,9 @@ impl Storage {
 
     /// Get samples for a specific date (convenience method)
     pub async fn get_samples_for_date(&self, date: NaiveDate) -> Result<Vec<TreadmillSample>> {
-        let start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let start = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
+            .and_utc();
         let end = start + chrono::Duration::days(1);
         self.get_samples_by_date_range(start, end).await
     }
@@ -127,7 +129,9 @@ impl Storage {
     /// Get a daily summary for a specific date
     pub async fn get_daily_summary(&self, date: NaiveDate) -> Result<Option<DailySummary>> {
         let date_str = date.format("%Y-%m-%d").to_string();
-        let start = date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        let start = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
+            .and_utc();
         let end = start + chrono::Duration::days(1);
         let start_unix = start.timestamp();
         let end_unix = end.timestamp();

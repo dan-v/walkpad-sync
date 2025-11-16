@@ -31,10 +31,10 @@ struct ActivityDetailView: View {
                     GridItem(.flexible()),
                     GridItem(.flexible())
                 ], spacing: 16) {
-                    StatCard(title: "Steps", value: summary.stepsFormatted, icon: "figure.walk")
-                    StatCard(title: "Distance", value: summary.distanceFormatted, icon: "ruler")
-                    StatCard(title: "Calories", value: summary.caloriesFormatted, icon: "flame.fill")
-                    StatCard(title: "Duration", value: summary.durationFormatted, icon: "clock.fill")
+                    StatCard(title: "Steps", value: summary.stepsFormatted, icon: "figure.walk", color: .blue)
+                    StatCard(title: "Distance", value: summary.distanceFormatted, icon: "ruler", color: .green)
+                    StatCard(title: "Calories", value: summary.caloriesFormatted, icon: "flame.fill", color: .orange)
+                    StatCard(title: "Duration", value: summary.durationFormatted, icon: "clock.fill", color: .purple)
                 }
                 .padding(.horizontal)
 
@@ -74,32 +74,6 @@ struct ActivityDetailView: View {
         } message: {
             Text("Activity synced to Apple Health")
         }
-    }
-}
-
-struct StatCard: View {
-    let title: String
-    let value: String
-    let icon: String
-
-    var body: some View {
-        VStack(spacing: 8) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundStyle(.blue)
-
-            Text(value)
-                .font(.title3)
-                .bold()
-
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding()
-        .background(.regularMaterial)
-        .cornerRadius(12)
     }
 }
 

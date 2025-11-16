@@ -149,8 +149,12 @@ async fn get_samples_by_range(
 
     info!("Getting samples from {} to {}", query.start_date, query.end_date);
 
-    let start = start_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
-    let end = end_date.and_hms_opt(23, 59, 59).unwrap().and_utc();
+    let start = start_date.and_hms_opt(0, 0, 0)
+        .ok_or_else(|| ApiError::Validation(ValidationError::new("Invalid start date time")))?
+        .and_utc();
+    let end = end_date.and_hms_opt(23, 59, 59)
+        .ok_or_else(|| ApiError::Validation(ValidationError::new("Invalid end date time")))?
+        .and_utc();
 
     let samples = state.storage.get_samples_by_date_range(start, end).await?;
     let samples: Vec<SampleResponse> = samples.into_iter().map(SampleResponse::from).collect();
@@ -221,10 +225,9 @@ async fn get_stats(
     let total_samples = state.storage.get_total_sample_count().await?;
     let latest_sample = state.storage.get_latest_sample().await?;
 
-    let latest_sample_time = latest_sample.map(|s| {
+    let latest_sample_time = latest_sample.and_then(|s| {
         chrono::DateTime::<Utc>::from_timestamp(s.timestamp, 0)
-            .unwrap()
-            .to_rfc3339()
+            .map(|dt| dt.to_rfc3339())
     });
 
     Ok(Json(StatsResponse {
