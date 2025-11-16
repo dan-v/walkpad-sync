@@ -33,6 +33,10 @@ pub struct BluetoothManager {
     storage: Arc<Storage>,
     config: BluetoothConfig,
     status_tx: broadcast::Sender<ConnectionStatus>,
+    // Track last seen cumulative values for delta calculation
+    last_distance: Arc<RwLock<Option<i64>>>,
+    last_calories: Arc<RwLock<Option<i64>>>,
+    last_steps: Arc<RwLock<Option<i64>>>,
 }
 
 impl BluetoothManager {
@@ -46,6 +50,9 @@ impl BluetoothManager {
             storage,
             config,
             status_tx,
+            last_distance: Arc::new(RwLock::new(None)),
+            last_calories: Arc::new(RwLock::new(None)),
+            last_steps: Arc::new(RwLock::new(None)),
         }, status_rx)
     }
 
@@ -353,20 +360,94 @@ impl BluetoothManager {
     async fn record_sample(&self, data: &TreadmillData) -> Result<()> {
         let timestamp = Utc::now();
 
-        // DEBUG: Log steps value before storing
-        if let Some(steps) = data.steps {
-            info!("🚶 STORING STEPS TO DB: {} steps (from TreadmillData)", steps);
-        } else {
-            debug!("No steps data in this sample");
+        // Compute deltas from last seen values
+        let (distance_delta, calories_delta, steps_delta) = {
+            let mut last_distance = self.last_distance.write().await;
+            let mut last_calories = self.last_calories.write().await;
+            let mut last_steps = self.last_steps.write().await;
+
+            // Convert current values to i64
+            let current_distance = data.distance.map(|d| d as i64);
+            let current_calories = data.total_energy.map(|e| e as i64);
+            let current_steps = data.steps.map(|s| s as i64);
+
+            // Compute distance delta
+            let distance_delta = if let Some(curr) = current_distance {
+                let delta = if let Some(last) = *last_distance {
+                    if curr >= last {
+                        // Normal increment
+                        curr - last
+                    } else {
+                        // Reset detected - ignore this sample for delta
+                        debug!("Distance reset detected: {} -> {}", last, curr);
+                        0
+                    }
+                } else {
+                    // First sample - no delta yet
+                    0
+                };
+                *last_distance = Some(curr);
+                Some(delta)
+            } else {
+                None
+            };
+
+            // Compute calories delta
+            let calories_delta = if let Some(curr) = current_calories {
+                let delta = if let Some(last) = *last_calories {
+                    if curr >= last {
+                        curr - last
+                    } else {
+                        debug!("Calories reset detected: {} -> {}", last, curr);
+                        0
+                    }
+                } else {
+                    0
+                };
+                *last_calories = Some(curr);
+                Some(delta)
+            } else {
+                None
+            };
+
+            // Compute steps delta
+            let steps_delta = if let Some(curr) = current_steps {
+                let delta = if let Some(last) = *last_steps {
+                    if curr >= last {
+                        curr - last
+                    } else {
+                        debug!("Steps reset detected: {} -> {}", last, curr);
+                        0
+                    }
+                } else {
+                    0
+                };
+                *last_steps = Some(curr);
+                Some(delta)
+            } else {
+                None
+            };
+
+            (distance_delta, calories_delta, steps_delta)
+        };
+
+        // Log deltas for debugging
+        if let Some(steps) = steps_delta {
+            if steps > 0 {
+                debug!("Steps delta: +{}", steps);
+            }
         }
 
-        // Store raw cumulative values from treadmill
+        // Store both raw cumulative values (for debugging) and deltas (for queries)
         self.storage.add_sample(
             timestamp,
             data.speed,
             data.distance.map(|d| d as i64),
             data.total_energy.map(|e| e as i64),
             data.steps.map(|s| s as i64),
+            distance_delta,
+            calories_delta,
+            steps_delta,
         ).await?;
 
         Ok(())

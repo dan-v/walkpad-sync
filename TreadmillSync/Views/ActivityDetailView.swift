@@ -18,10 +18,19 @@ struct ActivityDetailView: View {
                         .font(.title2)
                         .bold()
 
-                    if summary.isSynced {
-                        Label("Synced to Apple Health", systemImage: "checkmark.circle.fill")
-                            .font(.subheadline)
-                            .foregroundStyle(.green)
+                    if summary.isSynced, let syncTime = summary.syncedAtFormatted {
+                        VStack(spacing: 4) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text(syncTime)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Text("You can re-sync if you've walked more since then")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
                 .padding()
@@ -38,26 +47,30 @@ struct ActivityDetailView: View {
                 }
                 .padding(.horizontal)
 
-                // Sync button
-                if !summary.isSynced {
-                    Button {
-                        Task {
-                            await viewModel.syncToAppleHealth()
-                        }
-                    } label: {
-                        if viewModel.isSyncing {
-                            ProgressView()
-                                .progressViewStyle(.circular)
+                // Sync button - always show, but change text based on status
+                Button {
+                    Task {
+                        await viewModel.syncToAppleHealth()
+                    }
+                } label: {
+                    if viewModel.isSyncing {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                            .frame(maxWidth: .infinity)
+                    } else {
+                        if summary.isSynced {
+                            Label("Re-sync to Apple Health", systemImage: "arrow.triangle.2.circlepath")
                                 .frame(maxWidth: .infinity)
                         } else {
                             Label("Sync to Apple Health", systemImage: "heart.fill")
                                 .frame(maxWidth: .infinity)
                         }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isSyncing)
-                    .padding(.horizontal)
                 }
+                .buttonStyle(.borderedProminent)
+                .tint(summary.isSynced ? .green : .blue)
+                .disabled(viewModel.isSyncing)
+                .padding(.horizontal)
 
                 if let error = viewModel.error {
                     Text(error)
