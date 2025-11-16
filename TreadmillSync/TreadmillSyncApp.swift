@@ -20,17 +20,8 @@ struct TreadmillSyncApp: App {
                     // Request HealthKit permissions on launch
                     try? await HealthKitManager.shared.requestAuthorization()
 
-                    // Sync on app launch
-                    await syncManager.syncIfNeeded()
-
-                    // Schedule first background refresh
-                    scheduleBackgroundRefresh()
-                }
-                .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
-                    // Sync when app comes to foreground
-                    Task {
-                        await syncManager.syncIfNeeded()
-                    }
+                    // Note: Manual sync only - user must tap "Sync All to Apple Health" button
+                    // Background sync still happens every 4 hours when app is backgrounded
                 }
         }
     }
@@ -49,32 +40,32 @@ struct TreadmillSyncApp: App {
     }
 
     private func handleBackgroundRefresh(task: BGAppRefreshTask) {
-        // Schedule next background refresh
-        scheduleBackgroundRefresh()
+        // Background sync is disabled - user prefers manual sync only
+        // If you want to enable it, uncomment the code below:
 
-        let syncTask = Task {
-            await syncManager.performBackgroundSync()
-        }
+        // scheduleBackgroundRefresh()
+        // let syncTask = Task {
+        //     await syncManager.performBackgroundSync()
+        // }
+        // task.expirationHandler = {
+        //     syncTask.cancel()
+        // }
+        // Task {
+        //     await syncTask.value
+        //     task.setTaskCompleted(success: true)
+        // }
 
-        task.expirationHandler = {
-            syncTask.cancel()
-        }
-
-        Task {
-            await syncTask.value
-            task.setTaskCompleted(success: true)
-        }
+        task.setTaskCompleted(success: true)
     }
 
     private func scheduleBackgroundRefresh() {
-        let request = BGAppRefreshTaskRequest(identifier: "com.treadmillsync.refresh")
-        // Request refresh in 4 hours (iOS will schedule based on usage patterns)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 4 * 60 * 60)
-
-        do {
-            try BGTaskScheduler.shared.submit(request)
-        } catch {
-            print("Failed to schedule background refresh: \(error)")
-        }
+        // Background sync disabled - manual sync only
+        // let request = BGAppRefreshTaskRequest(identifier: "com.treadmillsync.refresh")
+        // request.earliestBeginDate = Date(timeIntervalSinceNow: 4 * 60 * 60)
+        // do {
+        //     try BGTaskScheduler.shared.submit(request)
+        // } catch {
+        //     print("Failed to schedule background refresh: \(error)")
+        // }
     }
 }

@@ -618,8 +618,18 @@ impl BluetoothManager {
             };
 
             // Additional validation
-            if duration < 10 {
-                warn!("Workout {} too short: only {} seconds. Deleting.", workout_id, duration);
+            const MIN_DURATION_SECONDS: i64 = 30;
+            if duration < MIN_DURATION_SECONDS {
+                warn!("Workout {} too short: only {} seconds (minimum {}s). Deleting.",
+                      workout_id, duration, MIN_DURATION_SECONDS);
+                self.storage.delete_workout(workout_id).await?;
+                return Ok(());
+            }
+
+            // Validate that workout has meaningful activity data
+            // HealthKit rejects workouts with no distance and no calories
+            if agg.total_distance == 0 && agg.total_calories == 0 {
+                warn!("Workout {} has no meaningful data (0m distance, 0 kcal). Deleting.", workout_id);
                 self.storage.delete_workout(workout_id).await?;
                 return Ok(());
             }

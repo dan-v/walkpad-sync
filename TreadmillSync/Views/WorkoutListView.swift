@@ -125,6 +125,25 @@ struct WorkoutListView: View {
                                 NavigationLink(destination: WorkoutDetailView(workout: workout)) {
                                     WorkoutRow(workout: workout)
                                 }
+                                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                                    Button {
+                                        Task {
+                                            await syncManager.syncWorkout(workout)
+                                        }
+                                    } label: {
+                                        Label("Sync", systemImage: "heart.circle.fill")
+                                    }
+                                    .tint(.green)
+                                }
+                                .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                                    Button(role: .destructive) {
+                                        Task {
+                                            await syncManager.deleteWorkout(workout)
+                                        }
+                                    } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
                             }
                         }
                     }

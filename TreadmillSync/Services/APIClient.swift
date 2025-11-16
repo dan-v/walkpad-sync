@@ -116,6 +116,23 @@ actor APIClient {
             throw APIError.serverError
         }
     }
+
+    // MARK: - Delete Workout
+
+    func deleteWorkout(workoutId: Int64) async throws {
+        guard let url = URL(string: "\(config.baseURL)/api/workouts/\(workoutId)") else {
+            throw APIError.invalidURL
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+
+        let (_, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+    }
 }
 
 // MARK: - Errors

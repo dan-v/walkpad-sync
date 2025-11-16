@@ -2,7 +2,7 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::{delete, get, post},
     Json, Router,
 };
 use chrono::Utc;
@@ -32,6 +32,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/workouts/pending", get(get_pending_workouts))
         .route("/api/workouts/:id/samples", get(get_workout_samples))
         .route("/api/workouts/:id/confirm_sync", post(confirm_sync))
+        .route("/api/workouts/:id", delete(delete_workout))
         .route("/api/workouts/live", get(get_live_workout))
         .route("/api/debug/live", get(get_debug_live))
         .with_state(state)
@@ -251,6 +252,28 @@ async fn confirm_sync(
         .await?;
 
     Ok(Json(ConfirmSyncResponse {
+        status: "ok".to_string(),
+    }))
+}
+
+// Delete workout
+#[derive(Debug, Serialize)]
+struct DeleteWorkoutResponse {
+    status: String,
+}
+
+async fn delete_workout(
+    State(state): State<AppState>,
+    axum::extract::Path(workout_id): axum::extract::Path<i64>,
+) -> Result<Json<DeleteWorkoutResponse>, ApiError> {
+    // Validate input
+    validate_workout_id(workout_id)?;
+
+    info!("Deleting workout {}", workout_id);
+
+    state.storage.delete_workout(workout_id).await?;
+
+    Ok(Json(DeleteWorkoutResponse {
         status: "ok".to_string(),
     }))
 }
