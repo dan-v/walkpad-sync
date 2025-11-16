@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
+    @State private var autoRefreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -11,6 +12,28 @@ struct TodayView: View {
                         ProgressView("Loading...")
                             .padding()
                     } else if let todaySummary = viewModel.todaySummary {
+                        // Workout status indicator
+                        if viewModel.isWorkoutOngoing {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                Text("Active workout detected")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "bolt.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                                Text("Refreshing every 3s")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
                         // Date header
                         Text("TODAY")
                             .font(.caption)
@@ -72,18 +95,6 @@ struct TodayView: View {
                         }
                         .padding(.horizontal)
 
-                        // Recent trend
-                        if viewModel.last7Days.count > 1 {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Last 7 Days")
-                                    .font(.headline)
-                                    .padding(.horizontal)
-
-                                recentTrendBars
-                            }
-                            .padding(.top, 8)
-                        }
-
                     } else {
                         // No activity today
                         ContentUnavailableView {
@@ -102,41 +113,31 @@ struct TodayView: View {
         }
         .task {
             await viewModel.loadData()
-        }
-    }
 
-    private var recentTrendBars: some View {
-        let maxSteps = viewModel.last7Days.map { $0.steps }.max() ?? 1
+            // Smart auto-refresh: fast during workout, slow otherwise
+            autoRefreshTask = Task {
+                while !Task.isCancelled {
+                    // Use fast refresh (3s) if workout is ongoing, otherwise slow (30s)
+                    let refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
+                    try? await Task.sleep(for: .seconds(refreshInterval))
 
-        return VStack(spacing: 8) {
-            HStack(alignment: .bottom, spacing: 8) {
-                ForEach(viewModel.last7Days) { summary in
-                    VStack(spacing: 4) {
-                        // Bar
-                        let height = maxSteps > 0 ? CGFloat(summary.steps) / CGFloat(maxSteps) * 80 : 0
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(summary.isToday ? Color.blue : Color.blue.opacity(0.5))
-                            .frame(height: max(height, 4))
-
-                        // Day label
-                        Text(summary.dayOfWeek)
-                            .font(.caption2)
-                            .foregroundColor(summary.isToday ? .blue : .secondary)
+                    if !Task.isCancelled {
+                        // Don't show loading indicator during background refresh
+                        await viewModel.loadData(showLoading: false)
                     }
-                    .frame(maxWidth: .infinity)
                 }
             }
-            .frame(height: 100)
-            .padding(.horizontal)
+        }
+        .onAppear {
+            // Keep screen awake while on Today page
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onDisappear {
+            // Re-enable auto-lock when leaving Today page
+            UIApplication.shared.isIdleTimerDisabled = false
 
-            // Legend
-            HStack {
-                Text("Daily average: \(viewModel.dailyAverageFormatted)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
-            }
-            .padding(.horizontal)
+            // Cancel auto-refresh when view disappears
+            autoRefreshTask?.cancel()
         }
     }
 }
@@ -196,6 +197,9 @@ class TodayViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isSyncing = false
     @Published var error: String?
+    @Published var lastFetchTime: Date?
+    @Published var previousSteps: Int64 = 0
+    @Published var lastStepsChangeTime: Date?
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -205,12 +209,21 @@ class TodayViewModel: ObservableObject {
         self.apiClient = APIClient(config: config)
     }
 
+    // Check if a workout is likely ongoing based on recent activity
+    var isWorkoutOngoing: Bool {
+        guard let summary = todaySummary else { return false }
+        guard let lastChange = lastStepsChangeTime else { return false }
+
+        // If steps increased within the last 60 seconds, workout is ongoing
+        let timeSinceLastChange = Date().timeIntervalSince(lastChange)
+        return timeSinceLastChange < 60
+    }
+
     var currentStreak: Int {
         guard !allSummaries.isEmpty else { return 0 }
 
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -231,8 +244,7 @@ class TodayViewModel: ObservableObject {
     }
 
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -240,7 +252,6 @@ class TodayViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = allSummaries
@@ -262,31 +273,16 @@ class TodayViewModel: ObservableObject {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
     }
 
-    var last7Days: [DailySummary] {
-        Array(allSummaries.suffix(7))
-    }
-
-    var dailyAverageFormatted: String {
-        guard !last7Days.isEmpty else { return "0" }
-        let totalSteps = last7Days.reduce(0) { $0 + $1.steps }
-        let average = totalSteps / Int64(last7Days.count)
-
-        if average >= 1000 {
-            let k = Double(average) / 1000.0
-            return String(format: "%.1fk", k)
+    func loadData(showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
         }
-        return "\(average)"
-    }
-
-    func loadData() async {
-        isLoading = true
         error = nil
 
         do {
-            // Get today's date
+            // Get today's date in local timezone
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(identifier: "UTC")
             let todayStr = formatter.string(from: Date())
 
             // Fetch all dates to get full summaries for streak/week calculation
@@ -301,14 +297,28 @@ class TodayViewModel: ObservableObject {
 
             allSummaries = loadedSummaries
 
-            // Find today's summary
-            todaySummary = loadedSummaries.first(where: { $0.date == todayStr })
+            // Find today's summary and detect if steps increased (workout ongoing)
+            let newSummary = loadedSummaries.first(where: { $0.date == todayStr })
+            let newSteps = newSummary?.steps ?? 0
+
+            // If steps increased since last fetch, update last change time
+            if newSteps > previousSteps {
+                lastStepsChangeTime = Date()
+            }
+
+            previousSteps = newSteps
+            todaySummary = newSummary
+
+            // Track fetch time for workout detection
+            lastFetchTime = Date()
 
         } catch {
             self.error = error.localizedDescription
         }
 
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     func syncAll() async {

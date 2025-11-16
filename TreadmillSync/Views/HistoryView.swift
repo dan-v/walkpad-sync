@@ -327,9 +327,8 @@ struct MonthCalendarView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
     private var calendar: Calendar {
-        var cal = Calendar.current
-        cal.timeZone = TimeZone(identifier: "UTC")!
-        return cal
+        // Server now returns dates in user's local timezone
+        return Calendar.current
     }
 
     private var weeks: [[Date?]] {
@@ -377,7 +376,8 @@ struct MonthCalendarView: View {
     private func stepsForDate(_ date: Date) -> Int64? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        // Server now returns local dates, so use local timezone
+        formatter.timeZone = TimeZone.current
         let dateString = formatter.string(from: date)
 
         return summaries.first(where: { $0.date == dateString })?.steps
@@ -386,7 +386,8 @@ struct MonthCalendarView: View {
     private func summaryForDate(_ date: Date) -> DailySummary? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        // Server now returns local dates, so use local timezone
+        formatter.timeZone = TimeZone.current
         let dateString = formatter.string(from: date)
 
         return summaries.first(where: { $0.date == dateString })
@@ -518,19 +519,16 @@ class HistoryViewModel: ObservableObject {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
 
-        // Initialize to current month in UTC
+        // Initialize to current month in local timezone
         let calendar = Calendar.current
-        var utcCalendar = calendar
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
         let now = Date()
-        self.selectedYear = utcCalendar.component(.year, from: now)
-        self.selectedMonth = utcCalendar.component(.month, from: now)
+        self.selectedYear = calendar.component(.year, from: now)
+        self.selectedMonth = calendar.component(.month, from: now)
     }
 
     var currentMonthTitle: String {
         let dateComponents = DateComponents(year: selectedYear, month: selectedMonth)
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         guard let date = calendar.date(from: dateComponents) else {
             return ""
@@ -538,13 +536,11 @@ class HistoryViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
     }
 
     var isCurrentMonth: Bool {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         let currentYear = calendar.component(.year, from: now)
         let currentMonth = calendar.component(.month, from: now)
@@ -557,8 +553,7 @@ class HistoryViewModel: ObservableObject {
         guard !dailySummaries.isEmpty else { return 0 }
 
         let sorted = dailySummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -580,8 +575,7 @@ class HistoryViewModel: ObservableObject {
 
     // This week stats
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -589,7 +583,6 @@ class HistoryViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = dailySummaries
@@ -604,8 +597,7 @@ class HistoryViewModel: ObservableObject {
         let monthSteps = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -619,8 +611,7 @@ class HistoryViewModel: ObservableObject {
         let monthDistance = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -628,15 +619,14 @@ class HistoryViewModel: ObservableObject {
             .reduce(0) { $0 + $1.distanceMeters }
 
         let miles = Double(monthDistance) / 1609.34
-        return String(format: "%.1f", miles)
+        return String(format: "%.2f", miles)
     }
 
     var monthCaloriesFormatted: String {
         let monthCalories = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -654,8 +644,7 @@ class HistoryViewModel: ObservableObject {
         dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
