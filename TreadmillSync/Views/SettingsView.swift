@@ -2,15 +2,12 @@ import SwiftUI
 
 struct SettingsView: View {
     @EnvironmentObject var syncManager: SyncManager
-    @Environment(\.dismiss) var dismiss
 
     @State private var host: String
     @State private var port: String
     @State private var useHTTPS: Bool
     @State private var isTestingConnection = false
     @State private var connectionTestResult: ConnectionTestResult?
-    @State private var showingValidationError = false
-    @State private var validationErrorMessage = ""
 
     init() {
         let config = ServerConfig.load()
@@ -22,12 +19,42 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // Connection Status
+                Section {
+                    HStack {
+                        Circle()
+                            .fill(syncManager.isConnected ? Color.green : Color.red)
+                            .frame(width: 12, height: 12)
+                        Text(syncManager.isConnected ? "Connected" : "Disconnected")
+                            .foregroundColor(syncManager.isConnected ? .green : .red)
+                            .fontWeight(.medium)
+                        Spacer()
+                        if syncManager.isConnected {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                        }
+                    }
+
+                    if syncManager.isConnected {
+                        LabeledContent("Server", value: "\(syncManager.serverConfig.host):\(syncManager.serverConfig.port)")
+                            .font(.caption)
+                    }
+
+                    if syncManager.pendingCount > 0 {
+                        LabeledContent("Pending Workouts", value: "\(syncManager.pendingCount)")
+                            .foregroundColor(.orange)
+                    }
+                } header: {
+                    Text("Status")
+                }
+
                 // Server Configuration
                 Section {
                     TextField("Host", text: $host)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .keyboardType(.URL)
+                        .onChange(of: host) { _, _ in saveSettings() }
 
                     HStack {
                         Text("Port")
@@ -36,13 +63,15 @@ struct SettingsView: View {
                             .keyboardType(.numberPad)
                             .multilineTextAlignment(.trailing)
                             .frame(width: 80)
+                            .onChange(of: port) { _, _ in saveSettings() }
                     }
 
                     Toggle("Use HTTPS", isOn: $useHTTPS)
+                        .onChange(of: useHTTPS) { _, _ in saveSettings() }
                 } header: {
                     Text("Server Configuration")
                 } footer: {
-                    Text("Example: myserver.local or 192.168.1.100")
+                    Text("Settings auto-save. Example: myserver.local or 192.168.1.100")
                 }
 
                 // Test Connection
@@ -85,24 +114,6 @@ struct SettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        saveSettings()
-                    }
-                    .fontWeight(.semibold)
-                }
-            }
-        }
-        .alert("Invalid Settings", isPresented: $showingValidationError) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text(validationErrorMessage)
         }
     }
 
@@ -138,24 +149,15 @@ struct SettingsView: View {
     private func saveSettings() {
         // Validate host
         let trimmedHost = host.trimmingCharacters(in: .whitespaces)
-        if trimmedHost.isEmpty {
-            validationErrorMessage = "Server host cannot be empty"
-            showingValidationError = true
-            return
-        }
+        guard !trimmedHost.isEmpty else { return }
 
         // Validate port
-        guard let portNum = Int(port), portNum > 0, portNum <= 65535 else {
-            validationErrorMessage = "Port must be a number between 1 and 65535"
-            showingValidationError = true
-            return
-        }
+        guard let portNum = Int(port), portNum > 0, portNum <= 65535 else { return }
 
         let config = ServerConfig(host: trimmedHost, port: portNum, useHTTPS: useHTTPS)
 
         Task {
             await syncManager.updateServerConfig(config)
-            dismiss()
         }
     }
 }

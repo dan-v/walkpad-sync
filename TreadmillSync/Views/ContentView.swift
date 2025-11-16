@@ -2,28 +2,22 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject var syncManager: SyncManager
-    @State private var showingSettings = false
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
-        NavigationStack {
+        TabView {
             WorkoutListView()
-                .navigationTitle("Treadmill Sync")
-                .toolbar {
-                    ToolbarItem(placement: .navigationBarTrailing) {
-                        Button {
-                            showingSettings = true
-                        } label: {
-                            Image(systemName: "gearshape")
-                        }
-                    }
+                .tabItem {
+                    Label("Workouts", systemImage: "figure.walk")
                 }
-                .sheet(isPresented: $showingSettings) {
-                    SettingsView()
+
+            SettingsView()
+                .tabItem {
+                    Label("Settings", systemImage: "gearshape")
                 }
-                .sheet(isPresented: .constant(!hasCompletedOnboarding)) {
-                    OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
-                }
+        }
+        .sheet(isPresented: .constant(!hasCompletedOnboarding)) {
+            OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
         }
     }
 }
