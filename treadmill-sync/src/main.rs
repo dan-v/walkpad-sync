@@ -101,9 +101,12 @@ async fn main() -> Result<()> {
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down gracefully");
 
-            // End any active workout before shutting down
-            if let Err(e) = bluetooth_manager.shutdown().await {
-                error!("Error during graceful shutdown: {}", e);
+            // End any active workout before shutting down (with timeout)
+            let shutdown_timeout = tokio::time::Duration::from_secs(10);
+            match tokio::time::timeout(shutdown_timeout, bluetooth_manager.shutdown()).await {
+                Ok(Ok(())) => info!("Graceful shutdown completed successfully"),
+                Ok(Err(e)) => error!("Error during graceful shutdown: {}", e),
+                Err(_) => error!("Shutdown timeout after {} seconds - forcing exit", shutdown_timeout.as_secs()),
             }
         }
     }
