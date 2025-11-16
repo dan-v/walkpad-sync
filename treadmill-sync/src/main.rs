@@ -2,10 +2,11 @@ mod api;
 mod bluetooth;
 mod config;
 mod storage;
+mod websocket;
 
 use anyhow::Result;
 use std::sync::Arc;
-use tokio::signal;
+use tokio::{signal, sync::broadcast};
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -43,10 +44,15 @@ async fn main() -> Result<()> {
     let storage = Arc::new(Storage::new(&database_url).await?);
     info!("✅ Database initialized at {}", config.database.path);
 
+    // Create WebSocket broadcast channel (capacity 100 messages)
+    let (ws_tx, _) = broadcast::channel(100);
+    info!("✅ WebSocket broadcast channel created");
+
     // Initialize Bluetooth manager
     let (bluetooth_manager, _status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
         config.bluetooth.clone(),
+        ws_tx.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
 
@@ -63,6 +69,7 @@ async fn main() -> Result<()> {
     // Create API router
     let app = create_router(AppState {
         storage: Arc::clone(&storage),
+        ws_tx: ws_tx.clone(),
     });
 
     // Start HTTP server
@@ -81,6 +88,7 @@ async fn main() -> Result<()> {
 
     info!("✨ Treadmill Sync Service is running!");
     info!("📊 API available at http://localhost:{}", config.server.port);
+    info!("🔌 WebSocket available at ws://localhost:{}/ws/live", config.server.port);
     info!("📝 Grafana setup: Use SQLite datasource with database at {}", config.database.path);
     info!("⏹️  Press Ctrl+C to stop");
 

@@ -18,18 +18,32 @@ struct ActivityDetailView: View {
                         .font(.title2)
                         .bold()
 
-                    if summary.isSynced, let syncTime = summary.syncedAtFormatted {
+                    if summary.isSynced {
                         VStack(spacing: 4) {
-                            HStack(spacing: 4) {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.green)
-                                Text(syncTime)
-                                    .font(.caption)
+                            if let syncTime = summary.syncedAtFormatted {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "checkmark.circle.fill")
+                                        .foregroundStyle(.green)
+                                    Text(syncTime)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+
+                            // Check if there's new data since last sync
+                            if SyncStateManager.shared.shouldResync(summary: summary) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "exclamationmark.circle.fill")
+                                        .foregroundStyle(.orange)
+                                    Text("New activity detected - re-sync recommended")
+                                        .font(.caption2)
+                                        .foregroundStyle(.orange)
+                                }
+                            } else {
+                                Text("Up to date with Apple Health")
+                                    .font(.caption2)
                                     .foregroundStyle(.secondary)
                             }
-                            Text("You can re-sync if you've walked more since then")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -59,8 +73,13 @@ struct ActivityDetailView: View {
                             .frame(maxWidth: .infinity)
                     } else {
                         if summary.isSynced {
-                            Label("Re-sync to Apple Health", systemImage: "arrow.triangle.2.circlepath")
-                                .frame(maxWidth: .infinity)
+                            // Check if re-sync is needed
+                            let needsResync = SyncStateManager.shared.shouldResync(summary: summary)
+                            Label(
+                                needsResync ? "Re-sync to Apple Health" : "Up to Date",
+                                systemImage: needsResync ? "arrow.triangle.2.circlepath" : "checkmark.circle.fill"
+                            )
+                            .frame(maxWidth: .infinity)
                         } else {
                             Label("Sync to Apple Health", systemImage: "heart.fill")
                                 .frame(maxWidth: .infinity)
@@ -68,7 +87,7 @@ struct ActivityDetailView: View {
                     }
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(summary.isSynced ? .green : .blue)
+                .tint(summary.isSynced ? (SyncStateManager.shared.shouldResync(summary: summary) ? .orange : .green) : .blue)
                 .disabled(viewModel.isSyncing)
                 .padding(.horizontal)
 
@@ -127,9 +146,9 @@ class ActivityDetailViewModel: ObservableObject {
             )
             print("✅ Saved to HealthKit")
 
-            // Mark as synced on server
-            try await apiClient.markDateSynced(date: summary.date)
-            print("✅ Marked as synced on server")
+            // Mark as synced locally
+            SyncStateManager.shared.markAsSynced(summary: summary)
+            print("✅ Marked as synced locally")
 
             showSuccessAlert = true
         } catch {

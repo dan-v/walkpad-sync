@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
@@ -12,25 +13,42 @@ struct TodayView: View {
                         ProgressView("Loading...")
                             .padding()
                     } else if let todaySummary = viewModel.todaySummary {
-                        // Workout status indicator
-                        if viewModel.isWorkoutOngoing {
+                        // Connection status indicator
+                        if viewModel.isWebSocketConnected {
                             HStack(spacing: 6) {
                                 Circle()
                                     .fill(Color.green)
                                     .frame(width: 8, height: 8)
-                                Text("Active workout detected")
+                                Text("Live")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.green)
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if viewModel.isWorkoutOngoing {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 8, height: 8)
+                                Text("Active workout")
                                     .font(.caption)
                                     .foregroundColor(.secondary)
                                 Image(systemName: "bolt.fill")
                                     .font(.caption2)
-                                    .foregroundColor(.green)
-                                Text("Refreshing every 3s")
+                                    .foregroundColor(.orange)
+                                Text("Polling every 3s")
                                     .font(.caption2)
                                     .foregroundColor(.secondary)
                             }
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
-                            .background(Color.green.opacity(0.1))
+                            .background(Color.orange.opacity(0.1))
                             .cornerRadius(8)
                         }
 
@@ -112,13 +130,25 @@ struct TodayView: View {
             }
         }
         .task {
+            // Connect to WebSocket for live updates
+            await viewModel.connectWebSocket()
+
+            // Load initial data
             await viewModel.loadData()
 
-            // Smart auto-refresh: fast during workout, slow otherwise
+            // Fallback polling when WebSocket is disconnected
+            // This also serves as periodic full refresh
             autoRefreshTask = Task {
                 while !Task.isCancelled {
-                    // Use fast refresh (3s) if workout is ongoing, otherwise slow (30s)
-                    let refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
+                    // If WebSocket connected, do slower background refresh
+                    // Otherwise, use fast refresh during workout
+                    let refreshInterval: Double
+                    if viewModel.isWebSocketConnected {
+                        refreshInterval = 60.0  // Slow refresh when WebSocket is active
+                    } else {
+                        refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
+                    }
+
                     try? await Task.sleep(for: .seconds(refreshInterval))
 
                     if !Task.isCancelled {
@@ -138,6 +168,11 @@ struct TodayView: View {
 
             // Cancel auto-refresh when view disappears
             autoRefreshTask?.cancel()
+
+            // Disconnect WebSocket
+            Task {
+                await viewModel.disconnectWebSocket()
+            }
         }
     }
 }
@@ -200,18 +235,48 @@ class TodayViewModel: ObservableObject {
     @Published var lastFetchTime: Date?
     @Published var previousSteps: Int64 = 0
     @Published var lastStepsChangeTime: Date?
+    @Published var isWebSocketConnected = false
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
+    private let webSocketManager: WebSocketManager
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
+        self.webSocketManager = WebSocketManager(config: config)
+
+        // Subscribe to WebSocket connection status
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            // Subscribe to connection status changes
+            for await status in await self.webSocketManager.connectionStatusPublisher.values {
+                await MainActor.run {
+                    self.isWebSocketConnected = (status == .connected)
+                    print("🔌 WebSocket status: \(status)")
+                }
+            }
+        }
+
+        // Subscribe to WebSocket sample updates
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            for await sample in await self.webSocketManager.samplePublisher.values {
+                await MainActor.run {
+                    print("📨 New sample received via WebSocket: steps=\(sample.stepsDelta ?? 0)")
+                }
+                // Refresh data when new sample arrives
+                await self.loadData(showLoading: false)
+            }
+        }
     }
 
     // Check if a workout is likely ongoing based on recent activity
     var isWorkoutOngoing: Bool {
-        guard let summary = todaySummary else { return false }
+        guard todaySummary != nil else { return false }
         guard let lastChange = lastStepsChangeTime else { return false }
 
         // If steps increased within the last 60 seconds, workout is ongoing
@@ -340,8 +405,8 @@ class TodayViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
             }
 
             // Reload to update sync status
@@ -352,5 +417,15 @@ class TodayViewModel: ObservableObject {
         }
 
         isSyncing = false
+    }
+
+    // MARK: - WebSocket Management
+
+    func connectWebSocket() async {
+        await webSocketManager.connect()
+    }
+
+    func disconnectWebSocket() async {
+        await webSocketManager.disconnect()
     }
 }

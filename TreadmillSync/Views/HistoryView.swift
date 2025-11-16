@@ -465,15 +465,25 @@ struct MonthCalendarView: View {
                                         }
                                     }
 
-                                    // Unsynced indicator
-                                    if let summary = daySummary, !summary.isSynced {
+                                    // Sync status indicator
+                                    if let summary = daySummary {
                                         VStack {
                                             HStack {
                                                 Spacer()
-                                                Circle()
-                                                    .fill(Color.blue)
-                                                    .frame(width: 6, height: 6)
-                                                    .padding(4)
+                                                if !summary.isSynced {
+                                                    // Never synced - blue dot
+                                                    Circle()
+                                                        .fill(Color.blue)
+                                                        .frame(width: 6, height: 6)
+                                                        .padding(4)
+                                                } else if SyncStateManager.shared.shouldResync(summary: summary) {
+                                                    // Synced but has new data - orange dot
+                                                    Circle()
+                                                        .fill(Color.orange)
+                                                        .frame(width: 6, height: 6)
+                                                        .padding(4)
+                                                }
+                                                // No indicator if synced and up to date
                                             }
                                             Spacer()
                                         }
@@ -653,7 +663,7 @@ class HistoryViewModel: ObservableObject {
     }
 
     var unsyncedCount: Int {
-        dailySummaries.filter { !$0.isSynced }.count
+        dailySummaries.filter { !$0.isSynced || SyncStateManager.shared.shouldResync(summary: $0) }.count
     }
 
     // Best day stats
@@ -700,17 +710,23 @@ class HistoryViewModel: ObservableObject {
 
         do {
             let dates = try await apiClient.fetchActivityDates()
+            print("📅 Fetched \(dates.count) activity dates: \(dates)")
 
             var loadedSummaries: [DailySummary] = []
             for date in dates {
-                if let summary = try? await apiClient.fetchDailySummary(date: date) {
+                do {
+                    let summary = try await apiClient.fetchDailySummary(date: date)
                     loadedSummaries.append(summary)
+                    print("✅ Loaded summary for \(date): \(summary.steps) steps")
+                } catch {
+                    print("❌ Failed to load summary for \(date): \(error)")
                 }
             }
 
             dailySummaries = loadedSummaries.sorted { $0.date < $1.date }
+            print("📊 Total summaries loaded: \(dailySummaries.count)")
         } catch {
-            print("Error loading stats: \(error)")
+            print("❌ Error loading stats: \(error)")
         }
 
         isLoading = false
@@ -720,9 +736,10 @@ class HistoryViewModel: ObservableObject {
         isSyncing = true
         syncError = nil
 
-        let unsyncedSummaries = dailySummaries.filter { !$0.isSynced }
+        // Sync unsynced days AND days that need re-sync (have new data)
+        let summariesToSync = dailySummaries.filter { !$0.isSynced || SyncStateManager.shared.shouldResync(summary: $0) }
 
-        for summary in unsyncedSummaries {
+        for summary in summariesToSync {
             do {
                 // Fetch samples for this date
                 let samples = try await apiClient.fetchSamples(date: summary.date)
@@ -736,16 +753,16 @@ class HistoryViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
-
-                // Reload to get updated sync status
-                await loadData()
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
             } catch {
                 syncError = "Failed to sync \(summary.dateFormatted): \(error.localizedDescription)"
                 break
             }
         }
+
+        // Reload data once after all syncs complete to refresh UI
+        await loadData()
 
         isSyncing = false
     }
