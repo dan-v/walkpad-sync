@@ -67,9 +67,9 @@ struct WorkoutListView: View {
                             ProgressView()
                                 .progressViewStyle(CircularProgressViewStyle(tint: .white))
                         } else {
-                            Image(systemName: "arrow.triangle.2.circlepath")
+                            Image(systemName: "heart.circle.fill")
                         }
-                        Text(syncManager.isSyncing ? "Syncing..." : "Sync Now")
+                        Text(syncManager.isSyncing ? "Syncing to Apple Health..." : "Sync All to Apple Health")
                             .fontWeight(.semibold)
                     }
                     .frame(maxWidth: .infinity)
@@ -193,9 +193,19 @@ struct WorkoutRow: View {
                     .font(.subheadline)
                     .foregroundColor(.secondary)
                 Spacer()
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundColor(.green)
-                    .font(.caption)
+                HStack(spacing: 4) {
+                    Image(systemName: "clock.fill")
+                        .foregroundColor(.orange)
+                        .font(.caption2)
+                    Text("Pending")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .fontWeight(.medium)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.orange.opacity(0.1))
+                .cornerRadius(6)
             }
 
             HStack(spacing: 16) {

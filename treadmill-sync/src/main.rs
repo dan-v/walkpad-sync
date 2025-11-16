@@ -94,6 +94,11 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down gracefully");
+
+            // End any active workout before shutting down
+            if let Err(e) = bluetooth_manager.shutdown().await {
+                error!("Error during graceful shutdown: {}", e);
+            }
         }
     }
 

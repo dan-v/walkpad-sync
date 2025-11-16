@@ -696,4 +696,20 @@ impl BluetoothManager {
 
         Ok(None)
     }
+
+    /// Gracefully shutdown, ending any active workout
+    pub async fn shutdown(&self) -> Result<()> {
+        let current = self.current_workout_id.read().await;
+
+        if let Some(workout_id) = *current {
+            info!("Shutting down with active workout {}, ending gracefully...", workout_id);
+            drop(current); // Release read lock before calling end_workout
+            self.end_workout().await?;
+            info!("Active workout ended successfully during shutdown");
+        } else {
+            info!("No active workout during shutdown");
+        }
+
+        Ok(())
+    }
 }
