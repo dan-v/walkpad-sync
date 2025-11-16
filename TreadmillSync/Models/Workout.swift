@@ -119,6 +119,21 @@ struct DailySummary: Codable, Identifiable {
         formatter.unitsStyle = .abbreviated
         return formatter.localizedString(for: date, relativeTo: Date())
     }
+
+    var dayOfWeek: String {
+        guard let dateObj = dateDisplay else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: dateObj)
+    }
+
+    var isToday: Bool {
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let todayStr = DateFormatters.yearMonthDay.string(from: Date())
+        return date == todayStr
+    }
 }
 
 struct SamplesResponse: Codable {

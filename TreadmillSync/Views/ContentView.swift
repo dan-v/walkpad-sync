@@ -5,14 +5,14 @@ struct ContentView: View {
 
     var body: some View {
         TabView {
-            ActivityListView()
+            TodayView()
                 .tabItem {
-                    Label("Activity", systemImage: "figure.walk")
+                    Label("Today", systemImage: "calendar.badge.clock")
                 }
 
-            StatsView()
+            HistoryView()
                 .tabItem {
-                    Label("Stats", systemImage: "chart.line.uptrend.xyaxis")
+                    Label("History", systemImage: "calendar")
                 }
 
             SettingsView()
