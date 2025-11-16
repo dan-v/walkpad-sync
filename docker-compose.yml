@@ -1,0 +1,46 @@
+version: '3.8'
+
+services:
+  treadmill-sync:
+    build:
+      context: ./treadmill-sync
+      dockerfile: Dockerfile
+    container_name: treadmill-sync
+    volumes:
+      - ./data:/data
+      - /var/run/dbus:/var/run/dbus  # For Bluetooth access
+    devices:
+      - /dev/bus/usb  # For Bluetooth adapter
+    network_mode: host  # Needed for Bluetooth
+    privileged: true    # Needed for Bluetooth
+    restart: unless-stopped
+    environment:
+      - RUST_LOG=info
+      - DATABASE_PATH=/data/treadmill.db
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - ./data:/data:ro  # Read-only access to treadmill.db
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=frser-sqlite-datasource
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    restart: unless-stopped
+    depends_on:
+      - treadmill-sync
+
+volumes:
+  grafana-data:

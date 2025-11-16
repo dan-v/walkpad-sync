@@ -9,7 +9,7 @@ use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use api::{create_event_channel, create_router, AppState};
+use api::{create_router, AppState};
 use bluetooth::BluetoothManager;
 use config::Config;
 use storage::Storage;
@@ -25,7 +25,7 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("Starting Treadmill Sync Service");
+    info!("🚀 Starting Treadmill Sync Service v2 - Raw Data Capture Mode");
 
     // Load configuration
     let config = Config::from_file_or_default("config.toml");
@@ -41,17 +41,12 @@ async fn main() -> Result<()> {
     // Initialize storage
     let database_url = format!("sqlite://{}", config.database.path);
     let storage = Arc::new(Storage::new(&database_url).await?);
-    info!("Database initialized at {}", config.database.path);
-
-    // Create WebSocket event channel
-    let event_tx = create_event_channel();
-    info!("WebSocket event channel created");
+    info!("✅ Database initialized at {}", config.database.path);
 
     // Initialize Bluetooth manager
     let (bluetooth_manager, _status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
         config.bluetooth.clone(),
-        event_tx.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
 
@@ -68,13 +63,11 @@ async fn main() -> Result<()> {
     // Create API router
     let app = create_router(AppState {
         storage: Arc::clone(&storage),
-        bluetooth: Arc::clone(&bluetooth_manager),
-        event_tx: event_tx.clone(),
     });
 
     // Start HTTP server
     let addr = format!("{}:{}", config.server.host, config.server.port);
-    info!("Starting HTTP server on {}", addr);
+    info!("🌐 Starting HTTP server on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     let server_handle = tokio::spawn(async move {
@@ -86,9 +79,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!("Treadmill Sync Service is running!");
-    info!("API available at http://localhost:{}", config.server.port);
-    info!("Press Ctrl+C to stop");
+    info!("✨ Treadmill Sync Service is running!");
+    info!("📊 API available at http://localhost:{}", config.server.port);
+    info!("📝 Grafana setup: Use SQLite datasource with database at {}", config.database.path);
+    info!("⏹️  Press Ctrl+C to stop");
 
     // Wait for either task to complete (or Ctrl+C)
     tokio::select! {
@@ -100,18 +94,10 @@ async fn main() -> Result<()> {
         }
         _ = signal::ctrl_c() => {
             info!("Received Ctrl+C, shutting down gracefully");
-
-            // End any active workout before shutting down (with timeout)
-            let shutdown_timeout = tokio::time::Duration::from_secs(10);
-            match tokio::time::timeout(shutdown_timeout, bluetooth_manager.shutdown()).await {
-                Ok(Ok(())) => info!("Graceful shutdown completed successfully"),
-                Ok(Err(e)) => error!("Error during graceful shutdown: {}", e),
-                Err(_) => error!("Shutdown timeout after {} seconds - forcing exit", shutdown_timeout.as_secs()),
-            }
         }
     }
 
-    info!("Treadmill Sync Service stopped");
+    info!("👋 Treadmill Sync Service stopped");
     Ok(())
 }
 
