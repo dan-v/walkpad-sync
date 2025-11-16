@@ -93,18 +93,23 @@ struct WorkoutListView: View {
     // MARK: - Live Workout via WebSocket
 
     private func setupLiveWorkoutUpdates() {
+        print("🔧 WorkoutListView: Setting up live workout updates")
+
         // Watch for changes to liveWorkout from WebSocket
         syncManager.$liveWorkout
             .sink { workout in
-                Task {
+                print("📢 WorkoutListView: liveWorkout changed to: \(workout?.id ?? -1)")
+                Task { @MainActor in
                     if workout != nil {
+                        print("  ▶️ Active workout detected, fetching live data...")
                         // WebSocket says there's an active workout - fetch full data with metrics
-                        await fetchLiveWorkoutData()
-                        startPeriodicUpdates()
+                        await self.fetchLiveWorkoutData()
+                        self.startPeriodicUpdates()
                     } else {
+                        print("  ⏸️ No active workout, clearing live data")
                         // No active workout
-                        liveWorkoutData = nil
-                        updateTask?.cancel()
+                        self.liveWorkoutData = nil
+                        self.updateTask?.cancel()
                     }
                 }
             }
@@ -112,10 +117,13 @@ struct WorkoutListView: View {
 
         // Initial fetch if there's already a live workout
         if syncManager.liveWorkout != nil {
+            print("🏁 WorkoutListView: Initial live workout detected: \(syncManager.liveWorkout!.id)")
             Task {
                 await fetchLiveWorkoutData()
                 startPeriodicUpdates()
             }
+        } else {
+            print("🏁 WorkoutListView: No initial live workout")
         }
     }
 
@@ -132,12 +140,20 @@ struct WorkoutListView: View {
 
     private func fetchLiveWorkoutData() async {
         guard syncManager.isConnected else {
+            print("⚠️ WorkoutListView: Not connected, clearing live workout data")
             liveWorkoutData = nil
             return
         }
 
+        print("🔍 WorkoutListView: Fetching live workout data...")
         let data = await syncManager.fetchLiveWorkout()
-        liveWorkoutData = data
+        if let data = data {
+            print("✅ WorkoutListView: Received live workout data - workout: \(data.workout?.id ?? -1), has metrics: \(data.currentMetrics != nil)")
+            liveWorkoutData = data
+        } else {
+            print("⚠️ WorkoutListView: fetchLiveWorkout returned nil")
+            liveWorkoutData = nil
+        }
     }
 
     // Group workouts by date

@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::api::WorkoutEvent;
+use crate::api::{WorkoutEvent, WorkoutResponse};
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use ftms::{
@@ -354,40 +354,53 @@ impl BluetoothManager {
                    current_speed, data.incline.unwrap_or(0.0), data.distance, data.steps, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
+                    // NOTE: LifeSpan u8 counters wrap at 255, so we check BOTH distance AND calories
+                    // to avoid false positives. True reset affects all counters simultaneously.
                     if workout_started {
                         let mut reset_detected_this_sample = false;
+                        let mut distance_reset = false;
+                        let mut calories_reset = false;
 
                         if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
-                            // Ignore exact 0 values as they're likely BLE glitches
-                            // Only flag as reset if:
-                            // 1. Distance decreased by >10m AND
-                            // 2. Current distance is not exactly 0 (glitch) AND
-                            // 3. Current distance is suspiciously low (< 100m indicates treadmill counter reset)
+                            // Check for distance reset/wraparound
                             if current_distance < prev_distance.saturating_sub(10)
                                 && current_distance != 0
                                 && current_distance < 100 {
-                                warn!("Potential treadmill reset: distance dropped from {}m to {}m",
+                                // Could be reset OR counter wraparound (wraps at 4105m)
+                                // Need to check calories too before confirming reset
+                                debug!("Distance dropped from {}m to {}m (reset or wraparound)",
                                       prev_distance, current_distance);
-                                reset_detected_this_sample = true;
+                                distance_reset = true;
                             } else if current_distance == 0 {
                                 // Log glitches but don't treat as reset
                                 warn!("Ignoring distance=0 reading (likely BLE glitch), keeping previous: {}m", prev_distance);
                             }
                         }
 
-                        if !reset_detected_this_sample {
-                            if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
-                                // Ignore exact 0 values for calories too
-                                if current_calories < prev_calories.saturating_sub(5)
-                                    && current_calories != 0
-                                    && current_calories < 50 {
-                                    warn!("Potential treadmill reset: calories dropped from {} to {}",
+                        if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
+                            // Check for calories reset/wraparound
+                            if current_calories < prev_calories.saturating_sub(5)
+                                && current_calories != 0
+                                && current_calories < 50 {
+                                // Could be reset OR counter wraparound (wraps at 255)
+                                // Need to check distance too before confirming reset
+                                debug!("Calories dropped from {} to {} (reset or wraparound)",
                                           prev_calories, current_calories);
-                                    reset_detected_this_sample = true;
-                                } else if current_calories == 0 {
-                                    warn!("Ignoring calories=0 reading (likely BLE glitch), keeping previous: {}", prev_calories);
-                                }
+                                calories_reset = true;
+                            } else if current_calories == 0 {
+                                warn!("Ignoring calories=0 reading (likely BLE glitch), keeping previous: {}", prev_calories);
                             }
+                        }
+
+                        // Only trigger reset if BOTH distance AND calories show reset pattern
+                        // (Wraparound only affects one counter at a time, reset affects both)
+                        if distance_reset && calories_reset {
+                            warn!("Treadmill reset detected: both distance and calories dropped simultaneously");
+                            reset_detected_this_sample = true;
+                        } else if distance_reset {
+                            debug!("Distance dropped but calories stable - likely distance counter wraparound, not reset");
+                        } else if calories_reset {
+                            debug!("Calories dropped but distance stable - likely calorie counter wraparound, not reset");
                         }
 
                         if reset_detected_this_sample {
@@ -624,7 +637,8 @@ impl BluetoothManager {
 
         // Fetch the created workout and emit event
         if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
-            let _ = self.event_tx.send(WorkoutEvent::WorkoutStarted { workout });
+            let workout_response = WorkoutResponse::from(workout);
+            let _ = self.event_tx.send(WorkoutEvent::WorkoutStarted { workout: workout_response });
         }
 
         Ok(())
@@ -639,16 +653,40 @@ impl BluetoothManager {
             // Calculate deltas from workout baseline
             let baseline = self.workout_baseline.read().await;
             let (delta_distance, delta_steps, delta_calories) = if let Some(ref baseline) = *baseline {
+                // For LifeSpan treadmill: distance and calories use u8 counters (0-255)
+                // If current < baseline, counter wrapped - add 256 to account for wrap
+                // NOTE: This handles single wraparound. Multiple wraps (>2.55mi or >255kcal)
+                // in one workout would need more complex tracking.
+
                 let delta_dist = match (data.distance, baseline.start_distance) {
-                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    (Some(curr), Some(start)) => {
+                        if curr < start && (start - curr) > 1000 {
+                            // Wraparound detected (distance counter wraps at 255 hundredths = 4105m)
+                            // Add 4105m (256 hundredths * 1609.34 / 100) to current before subtracting baseline
+                            debug!("Distance wraparound detected: curr={}m < start={}m, adding 4105m", curr, start);
+                            Some((curr + 4105).saturating_sub(start) as i64)
+                        } else {
+                            Some(curr.saturating_sub(start) as i64)
+                        }
+                    }
                     _ => None,
                 };
+
                 let delta_step = match (data.steps, baseline.start_steps) {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
+
                 let delta_cal = match (data.total_energy, baseline.start_calories) {
-                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    (Some(curr), Some(start)) => {
+                        if curr < start && (start - curr) > 200 {
+                            // Wraparound detected (calories counter wraps at 255)
+                            debug!("Calories wraparound detected: curr={} < start={}, adding 256", curr, start);
+                            Some(((curr + 256) as i64).saturating_sub(start as i64))
+                        } else {
+                            Some(curr.saturating_sub(start) as i64)
+                        }
+                    }
                     _ => None,
                 };
                 (delta_dist, delta_step, delta_cal)
@@ -798,7 +836,8 @@ impl BluetoothManager {
 
             // Fetch completed workout and emit success event
             if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
-                let _ = self.event_tx.send(WorkoutEvent::WorkoutCompleted { workout });
+                let workout_response = WorkoutResponse::from(workout);
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutCompleted { workout: workout_response });
             }
 
             // Log success

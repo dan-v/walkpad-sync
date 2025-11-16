@@ -325,49 +325,48 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Distance => {
-            // Distance format: bytes[3-4] as 16-bit LE representing hundredths of miles
-            // Example: 0x0001 = 1 hundredth = 0.01 miles
-            if data.len() < 5 {
+            // Distance format: byte[3] as u8 representing hundredths of miles
+            // Example: 0x01 = 1 hundredth = 0.01 miles
+            // NOTE: This is an 8-bit counter that wraps at 255 (2.55 miles)
+            // The treadmill display tracks total distance, but BLE only sends low byte
+            if data.len() < 4 {
                 return Err(anyhow!("LifeSpan distance data too short"));
             }
-            let distance_hundredths = u16::from_le_bytes([data[3], data[4]]);
+            let distance_hundredths = data[3] as u32;  // Use u32 to avoid overflow in calculation
             let distance_miles = distance_hundredths as f64 / 100.0;
 
             // Convert miles to meters (1 mile = 1609.34 meters)
             let distance_meters = (distance_miles * 1609.34) as u32;
 
-            // Validate: distance should be reasonable (0-50 miles = 0-5000 hundredths)
-            if distance_hundredths <= 5000 {
-                result.distance = Some(distance_meters);
-                debug!("LifeSpan distance: {:.2} miles = {} meters", distance_miles, distance_meters);
-            } else {
-                debug!("Invalid distance: {} hundredths ({:.2} miles)", distance_hundredths, distance_miles);
-            }
+            result.distance = Some(distance_meters);
+            debug!("LifeSpan distance: {:.2} miles = {} meters (raw byte: 0x{:02X} = {} hundredths, byte[4]=0x{:02X})",
+                   distance_miles, distance_meters, data[3], distance_hundredths,
+                   if data.len() > 4 { data[4] } else { 0 });
         }
 
         LifeSpanQuery::Calories => {
-            // Calories format: 16-bit little-endian in bytes[3] and bytes[4]
-            if data.len() < 5 {
+            // Calories format: byte[3] as u8
+            // NOTE: This is an 8-bit counter that wraps at 255 kcal
+            // The treadmill display tracks total calories, but BLE only sends low byte
+            if data.len() < 4 {
                 return Err(anyhow!("LifeSpan calories data too short"));
             }
-            let calories = u16::from_le_bytes([data[3], data[4]]);
+            let calories = data[3] as u16;
 
-            // Validate: calories should be reasonable (0-5000)
-            if calories <= 5000 {
-                result.total_energy = Some(calories);
-                debug!("LifeSpan calories: {} kcal", calories);
-            } else {
-                debug!("Invalid calories: {}", calories);
-            }
+            result.total_energy = Some(calories);
+            debug!("LifeSpan calories: {} kcal (raw byte: 0x{:02X}, byte[4]=0x{:02X})",
+                   calories, data[3], if data.len() > 4 { data[4] } else { 0 });
         }
 
         LifeSpanQuery::Steps => {
             // Steps format: 16-bit little-endian in bytes[3] and bytes[4]
+            // Note: Steps appears to actually use 16 bits (unlike distance/calories)
             if data.len() < 5 {
                 return Err(anyhow!("LifeSpan steps data too short"));
             }
             let steps = u16::from_le_bytes([data[3], data[4]]);
-            debug!("LifeSpan steps: {}", steps);
+            debug!("LifeSpan steps: {} (raw bytes: [0x{:02X}, 0x{:02X}])",
+                   steps, data[3], data[4]);
             result.steps = Some(steps);
         }
 
