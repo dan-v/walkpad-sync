@@ -127,6 +127,7 @@ impl Storage {
     }
 
     /// Get a daily summary for a specific date
+    /// Handles mid-day resets by detecting when counters go backward and summing segments
     pub async fn get_daily_summary(&self, date: NaiveDate) -> Result<Option<DailySummary>> {
         let date_str = date.format("%Y-%m-%d").to_string();
         let start = date.and_hms_opt(0, 0, 0)
@@ -136,45 +137,134 @@ impl Storage {
         let start_unix = start.timestamp();
         let end_unix = end.timestamp();
 
-        let row = sqlx::query(
+        // Get all samples for the day, ordered by timestamp
+        let samples = sqlx::query(
             r#"
-            SELECT
-                COUNT(*) as total_samples,
-                COALESCE(MAX(distance_total) - MIN(distance_total), 0) as distance_meters,
-                COALESCE(MAX(calories_total) - MIN(calories_total), 0) as calories,
-                COALESCE(MAX(steps_total) - MIN(steps_total), 0) as steps,
-                COALESCE(AVG(speed), 0.0) as avg_speed,
-                COALESCE(MAX(speed), 0.0) as max_speed,
-                COALESCE(MAX(timestamp) - MIN(timestamp), 0) as duration_seconds
+            SELECT timestamp, speed, distance_total, calories_total, steps_total
             FROM treadmill_samples
             WHERE timestamp >= ? AND timestamp < ?
               AND speed > 0.0
+            ORDER BY timestamp ASC
             "#
         )
         .bind(start_unix)
         .bind(end_unix)
-        .fetch_one(&self.pool)
+        .fetch_all(&self.pool)
         .await?;
 
-        let total_samples: i64 = row.get("total_samples");
-
-        // No activity if no samples
-        if total_samples == 0 {
+        if samples.is_empty() {
             return Ok(None);
         }
+
+        // Calculate metrics handling resets (when counters go backward)
+        let mut total_distance: i64 = 0;
+        let mut total_calories: i64 = 0;
+        let mut total_steps: i64 = 0;
+
+        let mut segment_start_distance: Option<i64> = None;
+        let mut segment_start_calories: Option<i64> = None;
+        let mut segment_start_steps: Option<i64> = None;
+
+        let mut prev_distance: Option<i64> = None;
+        let mut prev_calories: Option<i64> = None;
+        let mut prev_steps: Option<i64> = None;
+
+        let mut sum_speed: f64 = 0.0;
+        let mut max_speed: f64 = 0.0;
+        let mut sample_count: i64 = 0;
+
+        for row in &samples {
+            let distance = row.try_get::<Option<i64>, _>("distance_total").ok().flatten();
+            let calories = row.try_get::<Option<i64>, _>("calories_total").ok().flatten();
+            let steps = row.try_get::<Option<i64>, _>("steps_total").ok().flatten();
+            let speed = row.try_get::<Option<f64>, _>("speed").ok().flatten().unwrap_or(0.0);
+
+            sample_count += 1;
+            sum_speed += speed;
+            if speed > max_speed {
+                max_speed = speed;
+            }
+
+            // Handle distance with reset detection
+            if let Some(d) = distance {
+                if let Some(prev_d) = prev_distance {
+                    // Reset detected: current value < previous value
+                    if d < prev_d {
+                        // Add completed segment to total
+                        if let Some(start_d) = segment_start_distance {
+                            total_distance += prev_d - start_d;
+                        }
+                        // Start new segment
+                        segment_start_distance = Some(d);
+                    }
+                } else {
+                    // First sample
+                    segment_start_distance = Some(d);
+                }
+                prev_distance = Some(d);
+            }
+
+            // Handle calories with reset detection
+            if let Some(c) = calories {
+                if let Some(prev_c) = prev_calories {
+                    if c < prev_c {
+                        if let Some(start_c) = segment_start_calories {
+                            total_calories += prev_c - start_c;
+                        }
+                        segment_start_calories = Some(c);
+                    }
+                } else {
+                    segment_start_calories = Some(c);
+                }
+                prev_calories = Some(c);
+            }
+
+            // Handle steps with reset detection
+            if let Some(s) = steps {
+                if let Some(prev_s) = prev_steps {
+                    if s < prev_s {
+                        if let Some(start_s) = segment_start_steps {
+                            total_steps += prev_s - start_s;
+                        }
+                        segment_start_steps = Some(s);
+                    }
+                } else {
+                    segment_start_steps = Some(s);
+                }
+                prev_steps = Some(s);
+            }
+        }
+
+        // Add final segment
+        if let (Some(end), Some(start)) = (prev_distance, segment_start_distance) {
+            total_distance += end - start;
+        }
+        if let (Some(end), Some(start)) = (prev_calories, segment_start_calories) {
+            total_calories += end - start;
+        }
+        if let (Some(end), Some(start)) = (prev_steps, segment_start_steps) {
+            total_steps += end - start;
+        }
+
+        // Calculate duration from first to last sample
+        let first_timestamp: i64 = samples[0].get("timestamp");
+        let last_timestamp: i64 = samples[samples.len() - 1].get("timestamp");
+        let duration_seconds = last_timestamp - first_timestamp;
+
+        let avg_speed = if sample_count > 0 { sum_speed / sample_count as f64 } else { 0.0 };
 
         // Check if this date has been synced
         let is_synced = self.is_date_synced(&date_str).await?;
 
         Ok(Some(DailySummary {
             date: date_str,
-            total_samples,
-            duration_seconds: row.get("duration_seconds"),
-            distance_meters: row.get("distance_meters"),
-            calories: row.get("calories"),
-            steps: row.get("steps"),
-            avg_speed: row.get("avg_speed"),
-            max_speed: row.get("max_speed"),
+            total_samples: sample_count,
+            duration_seconds,
+            distance_meters: total_distance,
+            calories: total_calories,
+            steps: total_steps,
+            avg_speed,
+            max_speed,
             is_synced,
         }))
     }

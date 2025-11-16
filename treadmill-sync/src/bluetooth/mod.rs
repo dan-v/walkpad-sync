@@ -353,6 +353,13 @@ impl BluetoothManager {
     async fn record_sample(&self, data: &TreadmillData) -> Result<()> {
         let timestamp = Utc::now();
 
+        // DEBUG: Log steps value before storing
+        if let Some(steps) = data.steps {
+            info!("🚶 STORING STEPS TO DB: {} steps (from TreadmillData)", steps);
+        } else {
+            debug!("No steps data in this sample");
+        }
+
         // Store raw cumulative values from treadmill
         self.storage.add_sample(
             timestamp,
