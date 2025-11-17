@@ -47,7 +47,7 @@ struct OnboardingView: View {
                         OnboardingFeature(
                             icon: "server.rack",
                             title: "Set Up Server First",
-                            description: "Run the Rust server on a Raspberry Pi near your treadmill"
+                            description: "Run the server on any Bluetooth-enabled device near your treadmill"
                         )
                         OnboardingFeature(
                             icon: "antenna.radiowaves.left.and.right",

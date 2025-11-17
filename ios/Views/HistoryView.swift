@@ -593,26 +593,35 @@ class HistoryViewModel: ObservableObject {
         return selectedYear == currentYear && selectedMonth == currentMonth
     }
 
-    // Streak calculation
+    // Streak calculation (weekends don't break the streak)
     var currentStreak: Int {
         guard !dailySummaries.isEmpty else { return 0 }
 
-        let sorted = dailySummaries.sorted { $0.date > $1.date }
         let calendar = Calendar.current
 
+        // Build set of all dates with data for O(1) lookup
+        let datesWithData: Set<Date> = Set(dailySummaries.compactMap { summary in
+            guard let date = summary.dateDisplay else { return nil }
+            return calendar.startOfDay(for: date)
+        })
+
         var streak = 0
-        var expectedDate = calendar.startOfDay(for: Date())
+        var checkDate = calendar.startOfDay(for: Date())
 
-        for summary in sorted {
-            guard let summaryDate = summary.dateDisplay else { continue }
-            let summaryDay = calendar.startOfDay(for: summaryDate)
+        // Go back up to 365 days
+        for _ in 0..<365 {
+            // Skip weekends entirely
+            if calendar.isDateInWeekend(checkDate) {
+                guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDate) else { break }
+                checkDate = prev
+                continue
+            }
 
-            if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
+            // Check if this weekday has data
+            if datesWithData.contains(checkDate) {
                 streak += 1
-                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
-                    break
-                }
-                expectedDate = previousDate
+                guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDate) else { break }
+                checkDate = prev
             } else {
                 break
             }

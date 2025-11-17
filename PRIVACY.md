@@ -20,7 +20,7 @@ WalkPad Sync is an open-source app that syncs walking pad (treadmill) workout da
 
 ## Data Storage
 
-- All workout data is stored on YOUR server (Raspberry Pi or other device you control)
+- All workout data is stored on YOUR server (any Bluetooth-enabled device you control)
 - The iOS app connects to your server over your local network
 - No data is sent to third-party servers
 - No cloud services are used

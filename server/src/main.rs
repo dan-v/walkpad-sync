@@ -21,12 +21,12 @@ async fn main() -> Result<()> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "treadmill_sync=info,tower_http=debug".into()),
+                .unwrap_or_else(|_| "walkpad_server=info,tower_http=debug".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("🚀 Starting Treadmill Sync Service v2 - Raw Data Capture Mode");
+    info!("🚀 Starting WalkPad Sync Server");
 
     // Load configuration (file -> env vars -> defaults)
     // Environment variables override config file values
@@ -97,7 +97,7 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!("✨ Treadmill Sync Service is running!");
+    info!("✨ WalkPad Sync Server is running!");
     info!(
         "📊 Dashboard: http://{}:{}",
         config.server.host, config.server.port
@@ -126,7 +126,7 @@ async fn main() -> Result<()> {
         }
     }
 
-    info!("👋 Treadmill Sync Service stopped");
+    info!("👋 WalkPad Sync Server stopped");
     Ok(())
 }
 

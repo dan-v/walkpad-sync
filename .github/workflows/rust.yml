@@ -1,15 +1,15 @@
-name: Rust Backend
+name: Server Build
 
 on:
   push:
     branches: [main, master]
     paths:
-      - 'treadmill-sync/**'
+      - 'server/**'
       - '.github/workflows/rust.yml'
   pull_request:
     branches: [main, master]
     paths:
-      - 'treadmill-sync/**'
+      - 'server/**'
       - '.github/workflows/rust.yml'
 
 env:
@@ -38,21 +38,21 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            treadmill-sync/target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('treadmill-sync/Cargo.lock') }}
+            server/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('server/Cargo.lock') }}
 
       - name: Check formatting
-        working-directory: treadmill-sync
+        working-directory: server
         run: cargo fmt --check
 
       - name: Clippy
-        working-directory: treadmill-sync
+        working-directory: server
         run: cargo clippy -- -D warnings
 
       - name: Build
-        working-directory: treadmill-sync
+        working-directory: server
         run: cargo build --release
 
       - name: Run tests
-        working-directory: treadmill-sync
+        working-directory: server
         run: cargo test

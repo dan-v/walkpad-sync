@@ -4,14 +4,14 @@ on:
   push:
     branches: [main, master]
     paths:
-      - 'TreadmillSync/**'
-      - 'TreadmillSync.xcodeproj/**'
+      - 'ios/**'
+      - 'WalkPadSync.xcodeproj/**'
       - '.github/workflows/ios.yml'
   pull_request:
     branches: [main, master]
     paths:
-      - 'TreadmillSync/**'
-      - 'TreadmillSync.xcodeproj/**'
+      - 'ios/**'
+      - 'WalkPadSync.xcodeproj/**'
       - '.github/workflows/ios.yml'
 
 jobs:
@@ -30,8 +30,8 @@ jobs:
       - name: Build iOS App
         run: |
           xcodebuild build \
-            -project TreadmillSync.xcodeproj \
-            -scheme TreadmillSync \
+            -project WalkPadSync.xcodeproj \
+            -scheme WalkPadSync \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             -configuration Debug \
             CODE_SIGN_IDENTITY="" \

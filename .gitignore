@@ -25,7 +25,7 @@ DerivedData/
 *.dSYM.zip
 *.dSYM
 
-# Rust (also in treadmill-sync/.gitignore)
+# Rust
 target/
 
 # Database

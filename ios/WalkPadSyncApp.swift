@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct TreadmillSyncApp: App {
+struct WalkPadSyncApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
