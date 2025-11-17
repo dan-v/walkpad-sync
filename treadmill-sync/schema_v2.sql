@@ -16,8 +16,6 @@ CREATE TABLE IF NOT EXISTS treadmill_samples (
 -- Index for time-range queries (critical for Grafana and iOS app)
 CREATE INDEX IF NOT EXISTS idx_timestamp ON treadmill_samples(timestamp);
 
--- Track what dates have been synced to Apple Health
-CREATE TABLE IF NOT EXISTS health_syncs (
-    sync_date TEXT PRIMARY KEY,     -- YYYY-MM-DD format
-    synced_at INTEGER NOT NULL      -- Unix timestamp when sync occurred
-);
+-- Partial index for active samples (speed > 0) - speeds up daily summary queries
+-- This covers the common WHERE speed > 0.0 filter used in most aggregation queries
+CREATE INDEX IF NOT EXISTS idx_timestamp_active ON treadmill_samples(timestamp) WHERE speed > 0.0;

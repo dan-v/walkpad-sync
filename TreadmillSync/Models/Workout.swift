@@ -30,14 +30,6 @@ private enum DateFormatters {
         formatter.timeZone = TimeZone.current
         return formatter
     }()
-
-    // For server communication - server uses UTC for date grouping
-    static let yearMonthDayUTC: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
-        return formatter
-    }()
 }
 
 // MARK: - Date-Based API Models (v2)

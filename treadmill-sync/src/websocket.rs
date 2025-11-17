@@ -7,11 +7,15 @@ use axum::{
 };
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use tokio::sync::broadcast;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::api::AppState;
 use crate::storage::TreadmillSample;
+
+/// Interval for sending heartbeat messages to keep connection alive
+const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 
 /// Message sent to WebSocket clients when a new sample arrives
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -70,22 +74,52 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
         }
     });
 
-    // Spawn a task to send broadcast messages to client
+    // Spawn a task to send broadcast messages and heartbeats to client
     let mut send_task = tokio::spawn(async move {
-        while let Ok(msg) = rx.recv().await {
-            // Serialize the message
-            let json = match serde_json::to_string(&msg) {
-                Ok(j) => j,
-                Err(e) => {
-                    error!("Failed to serialize WebSocket message: {}", e);
-                    continue;
-                }
-            };
+        let mut heartbeat_interval = tokio::time::interval(HEARTBEAT_INTERVAL);
 
-            // Send to client
-            if sender.send(Message::Text(json)).await.is_err() {
-                warn!("Failed to send message to WebSocket client");
-                break;
+        loop {
+            tokio::select! {
+                // Send heartbeat at regular intervals
+                _ = heartbeat_interval.tick() => {
+                    let heartbeat_json = match serde_json::to_string(&WsMessage::Heartbeat) {
+                        Ok(j) => j,
+                        Err(e) => {
+                            error!("Failed to serialize heartbeat: {}", e);
+                            continue;
+                        }
+                    };
+                    if sender.send(Message::Text(heartbeat_json)).await.is_err() {
+                        debug!("Failed to send heartbeat - client likely disconnected");
+                        break;
+                    }
+                }
+                // Forward broadcast messages
+                result = rx.recv() => {
+                    match result {
+                        Ok(msg) => {
+                            let json = match serde_json::to_string(&msg) {
+                                Ok(j) => j,
+                                Err(e) => {
+                                    error!("Failed to serialize WebSocket message: {}", e);
+                                    continue;
+                                }
+                            };
+                            if sender.send(Message::Text(json)).await.is_err() {
+                                warn!("Failed to send message to WebSocket client");
+                                break;
+                            }
+                        }
+                        Err(broadcast::error::RecvError::Lagged(n)) => {
+                            warn!("WebSocket client lagged behind by {} messages", n);
+                            // Continue receiving - we'll just skip the lagged messages
+                        }
+                        Err(broadcast::error::RecvError::Closed) => {
+                            info!("Broadcast channel closed");
+                            break;
+                        }
+                    }
+                }
             }
         }
     });

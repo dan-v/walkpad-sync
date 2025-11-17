@@ -11,7 +11,7 @@ use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use api::{create_router, AppState};
-use bluetooth::BluetoothManager;
+use bluetooth::{BluetoothManager, ConnectionStatus};
 use config::Config;
 use storage::Storage;
 
@@ -51,12 +51,25 @@ async fn main() -> Result<()> {
     info!("✅ WebSocket broadcast channel created");
 
     // Initialize Bluetooth manager
-    let (bluetooth_manager, _status_rx) = BluetoothManager::new(
+    let (bluetooth_manager, status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
         config.bluetooth.clone(),
         ws_tx.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
+
+    // Create shared Bluetooth status for API
+    let bt_status = Arc::new(tokio::sync::RwLock::new(ConnectionStatus::Disconnected));
+    let bt_status_clone = Arc::clone(&bt_status);
+
+    // Spawn task to track Bluetooth status
+    let mut status_rx_task = status_rx;
+    tokio::spawn(async move {
+        while let Ok(status) = status_rx_task.recv().await {
+            let mut s = bt_status_clone.write().await;
+            *s = status;
+        }
+    });
 
     // Start Bluetooth monitoring in background
     let bluetooth_handle = {
@@ -72,6 +85,7 @@ async fn main() -> Result<()> {
     let app = create_router(AppState {
         storage: Arc::clone(&storage),
         ws_tx: ws_tx.clone(),
+        bluetooth_status: Arc::clone(&bt_status),
     });
 
     // Start HTTP server

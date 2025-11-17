@@ -1,4 +1,5 @@
 pub mod ftms;
+pub mod protocol;
 
 use anyhow::{anyhow, Result};
 use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, ScanFilter};
