@@ -9,8 +9,8 @@ use chrono::Utc;
 use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, RwLock};
-use tokio::time::sleep;
+use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::time::{sleep, timeout};
 use tracing::{debug, error, info, warn};
 
 use crate::config::BluetoothConfig;
@@ -65,19 +65,27 @@ impl BluetoothManager {
               self.config.scan_timeout_secs, self.config.reconnect_delay_secs);
         info!("🎯 Simple data capture mode - no workout detection, just raw samples");
 
+        let mut reconnect_attempts = 0u32;
+
         loop {
             match self.connect_and_monitor().await {
                 Ok(_) => {
                     info!("Connection cycle completed normally");
+                    reconnect_attempts = 0; // Reset on successful connection cycle
                 }
                 Err(e) => {
-                    error!("Connection error: {}", e);
+                    reconnect_attempts += 1;
+                    error!("Connection error (attempt #{}): {}", reconnect_attempts, e);
                     let _ = self.status_tx.send(ConnectionStatus::Error(e.to_string()));
                 }
             }
 
+            // Broadcast disconnected status before waiting
+            let _ = self.status_tx.send(ConnectionStatus::Disconnected);
+
             // Wait before reconnecting
-            info!("Waiting {} seconds before reconnection attempt...", self.config.reconnect_delay_secs);
+            info!("Reconnecting in {} seconds (attempt #{})...",
+                  self.config.reconnect_delay_secs, reconnect_attempts + 1);
             sleep(Duration::from_secs(self.config.reconnect_delay_secs)).await;
         }
     }
@@ -216,11 +224,15 @@ impl BluetoothManager {
             None
         };
 
-        // Start polling task for LifeSpan protocol
-        let poll_task = if is_lifespan {
+        // Channel for poll task to signal errors back to main loop
+        let (poll_error_tx, mut poll_error_rx) = mpsc::channel::<String>(1);
+
+        // Start polling task for LifeSpan protocol (wrapped in Option for take semantics)
+        let mut poll_task: Option<tokio::task::JoinHandle<()>> = if is_lifespan {
             let peripheral = peripheral.clone();
             let char = char.clone();
             let pending_queries = pending_queries.clone();
+            let error_tx = poll_error_tx.clone();
 
             Some(tokio::spawn(async move {
                 let queries = LifeSpanQuery::all_queries();
@@ -230,7 +242,10 @@ impl BluetoothManager {
                     for query in &queries {
                         let cmd = query.command();
                         if let Err(e) = peripheral.write(&char, &cmd, btleplug::api::WriteType::WithResponse).await {
-                            error!("Failed to write LifeSpan query {:?}: {}", query, e);
+                            let error_msg = format!("Failed to write LifeSpan query {:?}: {}", query, e);
+                            error!("{}", error_msg);
+                            // Signal the main loop that we've encountered an error
+                            let _ = error_tx.send(error_msg).await;
                             return;
                         }
 
@@ -253,9 +268,50 @@ impl BluetoothManager {
             None
         };
 
+        // Drop our copy of the sender so poll_error_rx will close when poll task finishes
+        drop(poll_error_tx);
+
         info!("📊 Capturing raw samples... (no workout detection)");
 
-        while let Some(notification) = notification_stream.next().await {
+        // Timeout for receiving notifications - if no data for 30 seconds, consider connection lost
+        let notification_timeout = Duration::from_secs(30);
+
+        loop {
+            // Use select to handle multiple event sources
+            let notification = tokio::select! {
+                // Check for poll task errors (LifeSpan only)
+                Some(error_msg) = poll_error_rx.recv() => {
+                    warn!("Poll task reported error: {}", error_msg);
+                    if let Some(task) = poll_task.take() {
+                        task.abort();
+                    }
+                    return Err(anyhow!("Poll task failed: {}", error_msg));
+                }
+                // Receive notification with timeout
+                result = timeout(notification_timeout, notification_stream.next()) => {
+                    match result {
+                        Ok(Some(notification)) => notification,
+                        Ok(None) => {
+                            // Stream ended
+                            info!("Notification stream ended");
+                            if let Some(task) = poll_task.take() {
+                                task.abort();
+                            }
+                            return Err(anyhow!("Notification stream closed"));
+                        }
+                        Err(_) => {
+                            // Timeout - no notifications received
+                            warn!("No notifications received for {} seconds, assuming connection lost",
+                                  notification_timeout.as_secs());
+                            if let Some(task) = poll_task.take() {
+                                task.abort();
+                            }
+                            return Err(anyhow!("Notification timeout - connection may be lost"));
+                        }
+                    }
+                }
+            };
+
             if notification.uuid != char.uuid {
                 continue;
             }
@@ -346,15 +402,15 @@ impl BluetoothManager {
             // Check if we're still connected
             if !peripheral.is_connected().await? {
                 warn!("Lost connection to treadmill after {} samples", sample_count);
-                if let Some(task) = poll_task {
+                if let Some(task) = poll_task.take() {
                     task.abort();
                 }
                 return Err(anyhow!("Connection lost"));
             }
         }
 
-        // Cancel polling task if it exists
-        if let Some(task) = poll_task {
+        // Cancel polling task if it exists (unlikely to reach here but good for cleanup)
+        if let Some(task) = poll_task.take() {
             task.abort();
         }
 
