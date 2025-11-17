@@ -264,7 +264,6 @@ class TodayViewModel: ObservableObject {
     @Published var todaySummary: DailySummary?
     @Published var allSummaries: [DailySummary] = []
     @Published var isLoading = false
-    @Published var isSyncing = false
     @Published var error: String?
     @Published var lastFetchTime: Date?
     @Published var previousSteps: Int64 = 0
@@ -272,7 +271,6 @@ class TodayViewModel: ObservableObject {
     @Published var isWebSocketConnected = false
 
     private let apiClient: APIClient
-    private let healthKitManager = HealthKitManager.shared
     private let webSocketManager: WebSocketManager
 
     init() {
@@ -362,14 +360,6 @@ class TodayViewModel: ObservableObject {
         return "\(weekSteps)"
     }
 
-    var unsyncedCount: Int {
-        allSummaries.filter { !$0.isSynced }.count
-    }
-
-    var unsyncedSummaries: [DailySummary] {
-        allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
-    }
-
     func loadData(showLoading: Bool = true) async {
         if showLoading {
             isLoading = true
@@ -408,39 +398,6 @@ class TodayViewModel: ObservableObject {
         if showLoading {
             isLoading = false
         }
-    }
-
-    func syncAll() async {
-        isSyncing = true
-        error = nil
-
-        do {
-            // Sync all unsynced days
-            for summary in unsyncedSummaries {
-                // Fetch samples
-                let samples = try await apiClient.fetchSamples(date: summary.date)
-
-                // Sync to HealthKit
-                try await healthKitManager.saveWorkout(
-                    date: summary.date,
-                    samples: samples,
-                    distanceMeters: summary.distanceMeters,
-                    calories: summary.calories,
-                    steps: summary.steps
-                )
-
-                // Mark as synced locally
-                SyncStateManager.shared.markAsSynced(summary: summary)
-            }
-
-            // Reload to update sync status
-            await loadData()
-
-        } catch {
-            self.error = error.localizedDescription
-        }
-
-        isSyncing = false
     }
 
     // MARK: - WebSocket Management

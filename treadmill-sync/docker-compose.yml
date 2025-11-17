@@ -1,0 +1,41 @@
+# Treadmill Sync - Docker Compose
+#
+# LINUX ONLY: Bluetooth requires host network and D-Bus access.
+# This will NOT work on macOS (Docker runs in a VM without Bluetooth).
+#
+# Usage:
+#   docker-compose up -d      # Start in background
+#   docker-compose logs -f    # View logs
+#   docker-compose down       # Stop
+#
+# Data is persisted in ./data/treadmill.db
+
+services:
+  treadmill-sync:
+    build: .
+    container_name: treadmill-sync
+    restart: unless-stopped
+
+    # Required for Bluetooth access on Linux
+    network_mode: host
+    privileged: true
+
+    volumes:
+      # D-Bus socket for Bluetooth communication
+      - /var/run/dbus:/var/run/dbus:ro
+      # Persist database
+      - ./data:/data
+
+    environment:
+      - TREADMILL_DB_PATH=/data/treadmill.db
+      - TREADMILL_HOST=0.0.0.0
+      - TREADMILL_PORT=8080
+      - TREADMILL_DEVICE_FILTER=LifeSpan
+      # Uncomment to change scan/reconnect settings:
+      # - TREADMILL_SCAN_TIMEOUT=30
+      # - TREADMILL_RECONNECT_DELAY=5
+      # Logging level (trace, debug, info, warn, error)
+      - RUST_LOG=treadmill_sync=info
+
+    # Note: network_mode=host ignores port mapping
+    # Access via http://localhost:8080

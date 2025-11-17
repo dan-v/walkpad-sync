@@ -15,9 +15,11 @@ use tracing::{debug, error, info, warn};
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use crate::websocket::{broadcast_sample, WsMessage};
-use ftms::{
-    parse_lifespan_response, parse_treadmill_data, LifeSpanQuery, TreadmillData,
-    LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, TREADMILL_DATA_UUID,
+
+// Use the protocol abstraction instead of direct ftms imports
+use ftms::TreadmillData;
+use protocol::{
+    detect_protocol, supported_protocol_uuids, ProtocolMode, QueryType, TreadmillProtocol,
 };
 
 #[derive(Debug, Clone)]
@@ -121,7 +123,7 @@ impl BluetoothManager {
 
         // Discover services and characteristics
         peripheral.discover_services().await?;
-        let chars = peripheral.characteristics();
+        let chars: Vec<Characteristic> = peripheral.characteristics().into_iter().collect();
 
         // Log all discovered services and characteristics for debugging
         info!("Discovered {} characteristics on treadmill", chars.len());
@@ -132,65 +134,65 @@ impl BluetoothManager {
             );
         }
 
-        // Try to find FTMS characteristic first, then fall back to LifeSpan proprietary
+        // Use protocol detection to find a supported protocol
+        let protocol = detect_protocol(&chars).ok_or_else(|| {
+            let supported = supported_protocol_uuids();
+            warn!("No supported treadmill protocol found!");
+            warn!("Supported protocols:");
+            for (uuid, name) in &supported {
+                warn!("  - {} (UUID: {})", name, uuid);
+            }
+            warn!("Check the characteristic list above to see what your treadmill exposes");
+            anyhow!("Treadmill data characteristic not found")
+        })?;
+
+        info!(
+            "Using {} protocol (UUID: {})",
+            protocol.name(),
+            protocol.characteristic_uuid()
+        );
+
+        // Find the characteristic for this protocol
         let treadmill_char = chars
             .iter()
-            .find(|c| c.uuid == TREADMILL_DATA_UUID)
-            .or_else(|| {
-                debug!("FTMS characteristic not found, trying LifeSpan proprietary protocol...");
-                chars.iter().find(|c| c.uuid == LIFESPAN_DATA_UUID)
-            })
-            .ok_or_else(|| {
-                warn!(
-                    "Neither FTMS (UUID: {}) nor LifeSpan (UUID: {}) characteristic found",
-                    TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID
-                );
-                warn!("Your treadmill may use a different protocol");
-                warn!("Check the characteristic list above to see what your treadmill exposes");
-                anyhow!("Treadmill data characteristic not found")
-            })?;
-
-        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
-            info!(
-                "Using LifeSpan proprietary protocol (UUID: {})",
-                LIFESPAN_DATA_UUID
-            );
-        } else {
-            info!(
-                "Using standard FTMS protocol (UUID: {})",
-                TREADMILL_DATA_UUID
-            );
-        }
+            .find(|c| c.uuid == protocol.characteristic_uuid())
+            .ok_or_else(|| anyhow!("Protocol characteristic not found"))?;
 
         // Subscribe to notifications
         peripheral.subscribe(treadmill_char).await?;
         info!("Subscribed to treadmill data notifications");
 
-        // Send handshake if using LifeSpan protocol
-        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
+        // Send handshake commands if the protocol requires them
+        let handshake_cmds = protocol.handshake_commands();
+        if !handshake_cmds.is_empty() {
             info!(
-                "Sending LifeSpan handshake sequence ({} commands)...",
-                LIFESPAN_HANDSHAKE.len()
+                "Sending {} handshake sequence ({} commands)...",
+                protocol.name(),
+                handshake_cmds.len()
             );
-            for (i, cmd) in LIFESPAN_HANDSHAKE.iter().enumerate() {
+            for (i, cmd) in handshake_cmds.iter().enumerate() {
                 peripheral
-                    .write(treadmill_char, cmd, btleplug::api::WriteType::WithResponse)
+                    .write(
+                        treadmill_char,
+                        &cmd.data,
+                        btleplug::api::WriteType::WithResponse,
+                    )
                     .await?;
                 debug!(
                     "Sent handshake command {}/{}: {:02X?}",
                     i + 1,
-                    LIFESPAN_HANDSHAKE.len(),
-                    cmd
+                    handshake_cmds.len(),
+                    cmd.data
                 );
-                sleep(Duration::from_millis(100)).await;
+                sleep(Duration::from_millis(cmd.delay_after_ms)).await;
             }
             info!("Handshake complete");
         }
 
         let _ = self.status_tx.send(ConnectionStatus::Connected);
 
-        // Monitor notifications (will poll for LifeSpan or passively listen for FTMS)
-        self.monitor_notifications(&peripheral, treadmill_char)
+        // Monitor notifications using the protocol abstraction
+        self.monitor_notifications(&peripheral, treadmill_char, protocol.as_ref())
             .await?;
 
         Ok(())
@@ -250,18 +252,19 @@ impl BluetoothManager {
         &self,
         peripheral: &Peripheral,
         char: &Characteristic,
+        protocol: &dyn TreadmillProtocol,
     ) -> Result<()> {
         let mut notification_stream = peripheral.notifications().await?;
         let mut sample_count = 0;
 
-        // For LifeSpan protocol: track pending queries with shared queue
-        let pending_queries = Arc::new(RwLock::new(
-            std::collections::VecDeque::<LifeSpanQuery>::new(),
-        ));
-        let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
+        // Check if this is a polling or passive protocol
+        let is_polling = matches!(protocol.mode(), ProtocolMode::Polling { .. });
 
-        // For LifeSpan: accumulate responses from all 5 queries into complete samples
-        let mut lifespan_accumulator = if is_lifespan {
+        // For polling protocols: track pending queries with shared queue
+        let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<QueryType>::new()));
+
+        // For polling protocols: accumulate responses from all queries into complete samples
+        let mut data_accumulator = if is_polling {
             Some(TreadmillData::default())
         } else {
             None
@@ -270,28 +273,35 @@ impl BluetoothManager {
         // Channel for poll task to signal errors back to main loop
         let (poll_error_tx, mut poll_error_rx) = mpsc::channel::<String>(1);
 
-        // Start polling task for LifeSpan protocol (wrapped in Option for take semantics)
-        let mut poll_task: Option<tokio::task::JoinHandle<()>> = if is_lifespan {
+        // Start polling task if this is a polling protocol
+        let mut poll_task: Option<tokio::task::JoinHandle<()>> = if is_polling {
             let peripheral = peripheral.clone();
             let char = char.clone();
             let pending_queries = pending_queries.clone();
             let error_tx = poll_error_tx.clone();
+            let queries = protocol.polling_queries();
+
+            // Get polling interval from protocol mode
+            let query_delay = match protocol.mode() {
+                ProtocolMode::Polling { interval_ms } => Duration::from_millis(interval_ms),
+                _ => Duration::from_millis(300), // Fallback
+            };
+
+            // We need to get the commands upfront since protocol is not Send
+            let query_commands: Vec<(QueryType, Vec<u8>)> = queries
+                .iter()
+                .filter_map(|q| protocol.query_command(*q).map(|cmd| (*q, cmd)))
+                .collect();
 
             Some(tokio::spawn(async move {
-                let queries = LifeSpanQuery::all_queries();
-                let query_delay = Duration::from_millis(300);
-
                 loop {
-                    for query in &queries {
-                        let cmd = query.command();
+                    for (query, cmd) in &query_commands {
                         if let Err(e) = peripheral
-                            .write(&char, &cmd, btleplug::api::WriteType::WithResponse)
+                            .write(&char, cmd, btleplug::api::WriteType::WithResponse)
                             .await
                         {
-                            let error_msg =
-                                format!("Failed to write LifeSpan query {:?}: {}", query, e);
+                            let error_msg = format!("Failed to write query {:?}: {}", query, e);
                             error!("{}", error_msg);
-                            // Signal the main loop that we've encountered an error
                             let _ = error_tx.send(error_msg).await;
                             return;
                         }
@@ -306,7 +316,7 @@ impl BluetoothManager {
                             }
                         }
 
-                        debug!("Sent LifeSpan query: {:?}", query);
+                        debug!("Sent query: {:?}", query);
                         tokio::time::sleep(query_delay).await;
                     }
                 }
@@ -326,7 +336,7 @@ impl BluetoothManager {
         loop {
             // Use select to handle multiple event sources
             let notification = tokio::select! {
-                // Check for poll task errors (LifeSpan only)
+                // Check for poll task errors (polling protocols only)
                 Some(error_msg) = poll_error_rx.recv() => {
                     warn!("Poll task reported error: {}", error_msg);
                     if let Some(task) = poll_task.take() {
@@ -363,8 +373,8 @@ impl BluetoothManager {
                 continue;
             }
 
-            // Handle LifeSpan vs FTMS protocol
-            let data = if is_lifespan {
+            // Parse notification data using the protocol
+            let data = if is_polling {
                 // Dequeue the pending query
                 let query = {
                     let mut queue = pending_queries.write().await;
@@ -373,10 +383,10 @@ impl BluetoothManager {
 
                 if let Some(query) = query {
                     // Parse response for this specific query
-                    match parse_lifespan_response(&notification.value, query) {
+                    match protocol.parse_data(&notification.value, Some(query)) {
                         Ok(partial_data) => {
                             // Accumulate this response into the accumulator
-                            if let Some(ref mut acc) = lifespan_accumulator {
+                            if let Some(ref mut acc) = data_accumulator {
                                 // Merge partial_data fields into accumulator
                                 if partial_data.speed.is_some() {
                                     acc.speed = partial_data.speed;
@@ -394,8 +404,8 @@ impl BluetoothManager {
                                     acc.elapsed_time = partial_data.elapsed_time;
                                 }
 
-                                // Time query is the last in the cycle - process accumulated data
-                                if query == LifeSpanQuery::Time {
+                                // Check if this is the last query in the cycle
+                                if protocol.is_cycle_complete(query) {
                                     let complete_data = acc.clone();
                                     *acc = TreadmillData::default(); // Reset for next cycle
                                     complete_data
@@ -408,20 +418,20 @@ impl BluetoothManager {
                             }
                         }
                         Err(e) => {
-                            debug!("Failed to parse LifeSpan response for {:?}: {}", query, e);
+                            debug!("Failed to parse response for {:?}: {}", query, e);
                             continue;
                         }
                     }
                 } else {
-                    debug!("Received LifeSpan data with no pending query");
+                    debug!("Received data with no pending query");
                     continue;
                 }
             } else {
-                // Parse standard FTMS protocol
-                match parse_treadmill_data(&notification.value) {
+                // Passive protocol - parse data directly
+                match protocol.parse_data(&notification.value, None) {
                     Ok(data) => data,
                     Err(e) => {
-                        warn!("Failed to parse FTMS treadmill data: {}", e);
+                        warn!("Failed to parse {} data: {}", protocol.name(), e);
                         continue;
                     }
                 }

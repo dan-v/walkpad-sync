@@ -1,3 +1,19 @@
+//! Configuration management for the treadmill sync service.
+//!
+//! Configuration is loaded in this priority order:
+//! 1. Environment variables (highest priority)
+//! 2. Config file (config.toml)
+//! 3. Built-in defaults (lowest priority)
+//!
+//! # Environment Variables
+//!
+//! - `TREADMILL_DB_PATH` - Path to SQLite database
+//! - `TREADMILL_DEVICE_FILTER` - Bluetooth device name filter
+//! - `TREADMILL_SCAN_TIMEOUT` - Bluetooth scan timeout in seconds
+//! - `TREADMILL_RECONNECT_DELAY` - Reconnect delay in seconds
+//! - `TREADMILL_HOST` - HTTP server bind address
+//! - `TREADMILL_PORT` - HTTP server port
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -90,6 +106,47 @@ impl Config {
 
     pub fn from_file_or_default<P: AsRef<Path>>(path: P) -> Self {
         Self::from_file(path).unwrap_or_default()
+    }
+
+    /// Load config from file, then apply environment variable overrides.
+    /// Environment variables take precedence over file values.
+    pub fn load<P: AsRef<Path>>(config_path: P) -> Self {
+        let mut config = Self::from_file_or_default(config_path);
+        config.apply_env_overrides();
+        config
+    }
+
+    /// Apply environment variable overrides to the current config.
+    fn apply_env_overrides(&mut self) {
+        // Database
+        if let Ok(val) = std::env::var("TREADMILL_DB_PATH") {
+            self.database.path = val;
+        }
+
+        // Bluetooth
+        if let Ok(val) = std::env::var("TREADMILL_DEVICE_FILTER") {
+            self.bluetooth.device_name_filter = val;
+        }
+        if let Ok(val) = std::env::var("TREADMILL_SCAN_TIMEOUT") {
+            if let Ok(secs) = val.parse() {
+                self.bluetooth.scan_timeout_secs = secs;
+            }
+        }
+        if let Ok(val) = std::env::var("TREADMILL_RECONNECT_DELAY") {
+            if let Ok(secs) = val.parse() {
+                self.bluetooth.reconnect_delay_secs = secs;
+            }
+        }
+
+        // Server
+        if let Ok(val) = std::env::var("TREADMILL_HOST") {
+            self.server.host = val;
+        }
+        if let Ok(val) = std::env::var("TREADMILL_PORT") {
+            if let Ok(port) = val.parse() {
+                self.server.port = port;
+            }
+        }
     }
 
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
