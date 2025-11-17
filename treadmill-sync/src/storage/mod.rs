@@ -11,8 +11,8 @@ use std::time::Duration;
 /// A single raw sample from the treadmill
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct TreadmillSample {
-    pub timestamp: i64,           // Unix epoch seconds
-    pub speed: Option<f64>,       // m/s
+    pub timestamp: i64,              // Unix epoch seconds
+    pub speed: Option<f64>,          // m/s
     pub distance_total: Option<i64>, // cumulative meters (raw, for debugging)
     pub calories_total: Option<i64>, // cumulative kcal (raw, for debugging)
     pub steps_total: Option<i64>,    // cumulative steps (raw, for debugging)
@@ -24,13 +24,13 @@ pub struct TreadmillSample {
 /// Summary of activity for a specific date
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DailySummary {
-    pub date: String,            // YYYY-MM-DD
+    pub date: String, // YYYY-MM-DD
     pub total_samples: i64,
     pub duration_seconds: i64,
     pub distance_meters: i64,
     pub calories: i64,
     pub steps: i64,
-    pub avg_speed: f64,          // m/s
+    pub avg_speed: f64, // m/s
     pub max_speed: f64,
 }
 
@@ -63,6 +63,7 @@ impl Storage {
     }
 
     /// Add a raw sample from the treadmill
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_sample(
         &self,
         timestamp: DateTime<Utc>,
@@ -80,7 +81,7 @@ impl Storage {
             "INSERT OR REPLACE INTO treadmill_samples
              (timestamp, speed, distance_total, calories_total, steps_total,
               distance_delta, calories_delta, steps_delta)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(timestamp_unix)
         .bind(speed)
@@ -110,7 +111,7 @@ impl Storage {
                     distance_delta, calories_delta, steps_delta
              FROM treadmill_samples
              WHERE timestamp >= ? AND timestamp < ?
-             ORDER BY timestamp ASC"
+             ORDER BY timestamp ASC",
         )
         .bind(start_unix)
         .bind(end_unix)
@@ -125,9 +126,14 @@ impl Storage {
     /// # Arguments
     /// * `date` - The date in the user's local timezone
     /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
-    pub async fn get_samples_for_date(&self, date: NaiveDate, tz_offset_seconds: i32) -> Result<Vec<TreadmillSample>> {
+    pub async fn get_samples_for_date(
+        &self,
+        date: NaiveDate,
+        tz_offset_seconds: i32,
+    ) -> Result<Vec<TreadmillSample>> {
         // Convert local date to UTC timestamp range (same logic as get_daily_summary)
-        let start_local = date.and_hms_opt(0, 0, 0)
+        let start_local = date
+            .and_hms_opt(0, 0, 0)
             .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
         let end_local = start_local + chrono::Duration::days(1);
 
@@ -150,12 +156,17 @@ impl Storage {
     /// # Arguments
     /// * `date` - The date in the user's local timezone
     /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
-    pub async fn get_daily_summary(&self, date: NaiveDate, tz_offset_seconds: i32) -> Result<Option<DailySummary>> {
+    pub async fn get_daily_summary(
+        &self,
+        date: NaiveDate,
+        tz_offset_seconds: i32,
+    ) -> Result<Option<DailySummary>> {
         let date_str = date.format("%Y-%m-%d").to_string();
 
         // Convert local date to UTC timestamp range
         // e.g., 2025-11-19 00:00 PST (-8h) = 2025-11-19 08:00 UTC
-        let start_local = date.and_hms_opt(0, 0, 0)
+        let start_local = date
+            .and_hms_opt(0, 0, 0)
             .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
         let end_local = start_local + chrono::Duration::days(1);
 
@@ -178,7 +189,7 @@ impl Storage {
             FROM treadmill_samples
             WHERE timestamp >= ? AND timestamp < ?
               AND speed > 0.0
-            "#
+            "#,
         )
         .bind(start_unix)
         .bind(end_unix)
@@ -228,13 +239,16 @@ impl Storage {
             FROM treadmill_samples
             WHERE speed > 0.0
             ORDER BY date DESC
-            "#
+            "#,
         )
         .bind(tz_offset_seconds)
         .fetch_all(&self.pool)
         .await?;
 
-        let dates = rows.iter().map(|row| row.get::<String, _>("date")).collect();
+        let dates = rows
+            .iter()
+            .map(|row| row.get::<String, _>("date"))
+            .collect();
         Ok(dates)
     }
 
@@ -244,7 +258,7 @@ impl Storage {
             "SELECT timestamp, speed, distance_total, calories_total, steps_total
              FROM treadmill_samples
              ORDER BY timestamp DESC
-             LIMIT 1"
+             LIMIT 1",
         )
         .fetch_optional(&self.pool)
         .await?;
@@ -259,5 +273,57 @@ impl Storage {
             .await?;
 
         Ok(row.get("count"))
+    }
+
+    /// Get all daily summaries at once (more efficient than N+1 queries)
+    ///
+    /// # Arguments
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds
+    pub async fn get_all_daily_summaries(
+        &self,
+        tz_offset_seconds: i32,
+    ) -> Result<Vec<DailySummary>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                DATE(timestamp + ?, 'unixepoch') as date,
+                COUNT(*) as total_samples,
+                COALESCE(SUM(distance_delta), 0) as distance_meters,
+                COALESCE(SUM(calories_delta), 0) as calories,
+                COALESCE(SUM(steps_delta), 0) as steps,
+                COALESCE(AVG(speed), 0) as avg_speed,
+                COALESCE(MAX(speed), 0) as max_speed,
+                MIN(timestamp) as first_timestamp,
+                MAX(timestamp) as last_timestamp
+            FROM treadmill_samples
+            WHERE speed > 0.0
+            GROUP BY DATE(timestamp + ?, 'unixepoch')
+            ORDER BY date DESC
+            "#,
+        )
+        .bind(tz_offset_seconds)
+        .bind(tz_offset_seconds)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let summaries = rows
+            .iter()
+            .map(|row| {
+                let first_timestamp: i64 = row.get("first_timestamp");
+                let last_timestamp: i64 = row.get("last_timestamp");
+                DailySummary {
+                    date: row.get("date"),
+                    total_samples: row.get("total_samples"),
+                    duration_seconds: last_timestamp - first_timestamp,
+                    distance_meters: row.get("distance_meters"),
+                    calories: row.get("calories"),
+                    steps: row.get("steps"),
+                    avg_speed: row.get("avg_speed"),
+                    max_speed: row.get("max_speed"),
+                }
+            })
+            .collect();
+
+        Ok(summaries)
     }
 }

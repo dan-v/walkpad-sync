@@ -9,6 +9,40 @@ struct TodayView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Error banner
+                    if let error = viewModel.error {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wifi.exclamationmark")
+                                .foregroundColor(.white)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Connection Error")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            Spacer()
+                            Button {
+                                Task { await viewModel.loadData() }
+                            } label: {
+                                Text("Retry")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(8)
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding()
+                        .background(Color.red)
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+
                     if viewModel.isLoading {
                         ProgressView("Loading...")
                             .padding()
@@ -240,7 +274,6 @@ class TodayViewModel: ObservableObject {
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
     private let webSocketManager: WebSocketManager
-    private var cancellables = Set<AnyCancellable>()
 
     init() {
         let config = ServerConfig.load()
@@ -255,7 +288,6 @@ class TodayViewModel: ObservableObject {
             for await status in await self.webSocketManager.connectionStatusPublisher.values {
                 await MainActor.run {
                     self.isWebSocketConnected = (status == .connected)
-                    print("🔌 WebSocket status: \(status)")
                 }
             }
         }
@@ -264,10 +296,7 @@ class TodayViewModel: ObservableObject {
         Task { @MainActor [weak self] in
             guard let self = self else { return }
 
-            for await sample in await self.webSocketManager.samplePublisher.values {
-                await MainActor.run {
-                    print("📨 New sample received via WebSocket: steps=\(sample.stepsDelta ?? 0)")
-                }
+            for await _ in await self.webSocketManager.samplePublisher.values {
                 // Refresh data when new sample arrives
                 await self.loadData(showLoading: false)
             }
@@ -353,16 +382,8 @@ class TodayViewModel: ObservableObject {
             formatter.dateFormat = "yyyy-MM-dd"
             let todayStr = formatter.string(from: Date())
 
-            // Fetch all dates to get full summaries for streak/week calculation
-            let dates = try await apiClient.fetchActivityDates()
-
-            var loadedSummaries: [DailySummary] = []
-            for date in dates {
-                if let summary = try? await apiClient.fetchDailySummary(date: date) {
-                    loadedSummaries.append(summary)
-                }
-            }
-
+            // Fetch all summaries in a single API call (instead of N+1 queries)
+            let loadedSummaries = try await apiClient.fetchAllSummaries()
             allSummaries = loadedSummaries
 
             // Find today's summary and detect if steps increased (workout ongoing)

@@ -30,8 +30,10 @@ async fn main() -> Result<()> {
 
     // Load configuration
     let config = Config::from_file_or_default("config.toml");
-    info!("Configuration loaded: database={}, port={}, device_filter={}",
-          config.database.path, config.server.port, config.bluetooth.device_name_filter);
+    info!(
+        "Configuration loaded: database={}, port={}, device_filter={}",
+        config.database.path, config.server.port, config.bluetooth.device_name_filter
+    );
 
     // Save default config if it doesn't exist
     if !std::path::Path::new("config.toml").exists() {
@@ -87,9 +89,18 @@ async fn main() -> Result<()> {
     });
 
     info!("✨ Treadmill Sync Service is running!");
-    info!("📊 Dashboard: http://{}:{}", config.server.host, config.server.port);
-    info!("📈 API: http://{}:{}/api/health", config.server.host, config.server.port);
-    info!("🔌 WebSocket: ws://{}:{}/ws/live", config.server.host, config.server.port);
+    info!(
+        "📊 Dashboard: http://{}:{}",
+        config.server.host, config.server.port
+    );
+    info!(
+        "📈 API: http://{}:{}/api/health",
+        config.server.host, config.server.port
+    );
+    info!(
+        "🔌 WebSocket: ws://{}:{}/ws/live",
+        config.server.host, config.server.port
+    );
     info!("💾 Database: {}", config.database.path);
     info!("⏹️  Press Ctrl+C to stop");
 
