@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Treadmill Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts@3.45.1/dist/apexcharts.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f7;
+            color: #1d1d1f;
+            padding: 12px;
+            line-height: 1.4;
+            font-size: 14px;
+        }
+
+        .container { max-width: 1600px; margin: 0 auto; }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 16px 20px;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        h1 {
+            font-size: 22px;
+            font-weight: 700;
+            color: #1d1d1f;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+            color: #86868b;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #34c759;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        select {
+            padding: 6px 12px;
+            border: 1px solid #d2d2d7;
+            border-radius: 6px;
+            background: white;
+            font-size: 13px;
+            cursor: pointer;
+            outline: none;
+        }
+
+        select:hover { border-color: #86868b; }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        .stat-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #86868b;
+            font-weight: 500;
+        }
+
+        .stat-icon {
+            font-size: 20px;
+        }
+
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1d1d1f;
+            margin-bottom: 4px;
+        }
+
+        .stat-change {
+            font-size: 12px;
+            color: #86868b;
+        }
+
+        .live-workout {
+            background: linear-gradient(135deg, #34c759 0%, #30d158 100%);
+            color: white;
+            padding: 16px 20px;
+            border-radius: 12px;
+            margin-bottom: 16px;
+            box-shadow: 0 2px 8px rgba(52, 199, 89, 0.3);
+        }
+
+        .live-workout h2 {
+            font-size: 16px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+
+        .live-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 16px;
+        }
+
+        .live-stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 2px;
+        }
+
+        .live-stat-value {
+            font-size: 22px;
+            font-weight: 700;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .chart-card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        .chart-card h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1d1d1f;
+        }
+
+        .table-card {
+            background: white;
+            padding: 16px;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+        }
+
+        .table-card h2 {
+            font-size: 15px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #1d1d1f;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        thead {
+            border-bottom: 2px solid #f5f5f7;
+        }
+
+        th {
+            text-align: left;
+            padding: 8px 12px;
+            font-size: 11px;
+            font-weight: 600;
+            color: #86868b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        th:not(:first-child) {
+            text-align: right;
+        }
+
+        td {
+            padding: 10px 12px;
+            font-size: 13px;
+            border-bottom: 1px solid #f5f5f7;
+        }
+
+        td:not(:first-child) {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+        }
+
+        tbody tr:hover {
+            background: #fafafa;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 24px;
+            color: #86868b;
+        }
+
+        .hidden { display: none !important; }
+
+        @media (max-width: 768px) {
+            .charts-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            h1 {
+                font-size: 18px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <h1>Treadmill Activity</h1>
+            </div>
+            <div class="header-right">
+                <div class="status">
+                    <div class="status-dot" id="statusDot"></div>
+                    <span id="statusText">Live</span>
+                </div>
+                <select id="timeRange">
+                    <option value="7">Last 7 Days</option>
+                    <option value="30" selected>Last 30 Days</option>
+                    <option value="90">Last 90 Days</option>
+                    <option value="365">Last Year</option>
+                </select>
+            </div>
+        </header>
+
+        <div id="liveWorkout" class="live-workout hidden">
+            <h2>🏃 Active Workout</h2>
+            <div class="live-stats">
+                <div>
+                    <div class="live-stat-label">Speed</div>
+                    <div class="live-stat-value" id="liveSpeed">0.0 m/s</div>
+                </div>
+                <div>
+                    <div class="live-stat-label">Steps</div>
+                    <div class="live-stat-value" id="liveSteps">0</div>
+                </div>
+                <div>
+                    <div class="live-stat-label">Distance</div>
+                    <div class="live-stat-value" id="liveDistance">0 mi</div>
+                </div>
+                <div>
+                    <div class="live-stat-label">Calories</div>
+                    <div class="live-stat-value" id="liveCalories">0</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Steps</span>
+                    <span class="stat-icon">👣</span>
+                </div>
+                <div class="stat-value" id="totalSteps">—</div>
+                <div class="stat-change" id="stepsChange">Loading...</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Distance</span>
+                    <span class="stat-icon">📍</span>
+                </div>
+                <div class="stat-value" id="totalDistance">—</div>
+                <div class="stat-change" id="distanceChange">Loading...</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Calories</span>
+                    <span class="stat-icon">🔥</span>
+                </div>
+                <div class="stat-value" id="totalCalories">—</div>
+                <div class="stat-change" id="caloriesChange">Loading...</div>
+            </div>
+
+            <div class="stat-card">
+                <div class="stat-header">
+                    <span class="stat-label">Active Time</span>
+                    <span class="stat-icon">⏱️</span>
+                </div>
+                <div class="stat-value" id="totalTime">—</div>
+                <div class="stat-change" id="timeChange">Loading...</div>
+            </div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-card">
+                <h2>Steps Per Day</h2>
+                <div id="stepsChart"></div>
+            </div>
+            <div class="chart-card">
+                <h2>Distance Per Day</h2>
+                <div id="distanceChart"></div>
+            </div>
+            <div class="chart-card">
+                <h2>Calories Per Day</h2>
+                <div id="caloriesChart"></div>
+            </div>
+            <div class="chart-card">
+                <h2>Activity Heatmap</h2>
+                <div id="calendarChart"></div>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <h2>Recent Activity</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Steps</th>
+                        <th>Distance</th>
+                        <th>Calories</th>
+                        <th>Duration</th>
+                    </tr>
+                </thead>
+                <tbody id="recentActivityTable">
+                    <tr><td colspan="5" class="loading">Loading...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        const WS_URL = `ws://${window.location.host}/ws/live`;
+        let charts = {};
+        let ws = null;
+
+        function formatNumber(num) {
+            return new Intl.NumberFormat('en-US').format(Math.round(num));
+        }
+
+        function formatDistance(meters) {
+            const miles = meters / 1609.34;
+            return miles.toFixed(2) + ' mi';
+        }
+
+        function formatDuration(seconds) {
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            const secs = seconds % 60;
+            if (hours > 0) {
+                return `${hours}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            }
+            return `${mins}:${secs.toString().padStart(2, '0')}`;
+        }
+
+        function parseLocalDate(dateStr) {
+            // Parse YYYY-MM-DD as local date, not UTC
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
+        function getTimeRange() {
+            return parseInt(document.getElementById('timeRange').value);
+        }
+
+        function initCharts() {
+            const baseOptions = {
+                chart: {
+                    type: 'area',
+                    toolbar: { show: false },
+                    height: 220,
+                    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto'
+                },
+                stroke: { curve: 'smooth', width: 2 },
+                fill: {
+                    type: 'gradient',
+                    gradient: {
+                        shadeIntensity: 1,
+                        opacityFrom: 0.4,
+                        opacityTo: 0.1,
+                        stops: [0, 90, 100]
+                    }
+                },
+                dataLabels: { enabled: false },
+                markers: {
+                    size: 4,
+                    colors: undefined,
+                    strokeColors: '#fff',
+                    strokeWidth: 2,
+                    hover: { size: 6 }
+                },
+                xaxis: {
+                    type: 'datetime',
+                    labels: {
+                        style: { colors: '#86868b', fontSize: '12px' }
+                    }
+                },
+                yaxis: {
+                    labels: {
+                        style: { colors: '#86868b', fontSize: '12px' }
+                    },
+                    min: 0
+                },
+                grid: {
+                    borderColor: '#f5f5f7',
+                    strokeDashArray: 4
+                },
+                tooltip: {
+                    theme: 'light',
+                    x: { format: 'MMM dd' }
+                }
+            };
+
+            charts.steps = new ApexCharts(document.querySelector("#stepsChart"), {
+                ...baseOptions,
+                series: [{ name: 'Steps', data: [] }],
+                colors: ['#007AFF']
+            });
+            charts.steps.render();
+
+            charts.distance = new ApexCharts(document.querySelector("#distanceChart"), {
+                ...baseOptions,
+                series: [{ name: 'Distance (mi)', data: [] }],
+                colors: ['#34C759'],
+                yaxis: {
+                    labels: {
+                        style: { colors: '#86868b', fontSize: '12px' },
+                        formatter: (val) => val.toFixed(2)
+                    }
+                }
+            });
+            charts.distance.render();
+
+            charts.calories = new ApexCharts(document.querySelector("#caloriesChart"), {
+                ...baseOptions,
+                series: [{ name: 'Calories', data: [] }],
+                colors: ['#FF9500']
+            });
+            charts.calories.render();
+
+            charts.calendar = new ApexCharts(document.querySelector("#calendarChart"), {
+                chart: {
+                    type: 'heatmap',
+                    toolbar: { show: false },
+                    height: 220
+                },
+                series: [],
+                dataLabels: { enabled: false },
+                colors: ['#34C759'],
+                xaxis: { labels: { style: { colors: '#86868b', fontSize: '12px' } } },
+                yaxis: { labels: { style: { colors: '#86868b', fontSize: '12px' } } },
+                tooltip: { theme: 'light' },
+                plotOptions: {
+                    heatmap: {
+                        colorScale: {
+                            ranges: [
+                                { from: 0, to: 0, color: '#f5f5f7', name: 'none' },
+                                { from: 1, to: 1000, color: '#d4f1dd', name: 'low' },
+                                { from: 1001, to: 3000, color: '#8ce0a1', name: 'medium' },
+                                { from: 3001, to: 6000, color: '#4ec978', name: 'high' },
+                                { from: 6001, to: 100000, color: '#34c759', name: 'very high' }
+                            ]
+                        }
+                    }
+                }
+            });
+            charts.calendar.render();
+        }
+
+        async function fetchData() {
+            try {
+                const days = getTimeRange();
+                const tzOffset = -new Date().getTimezoneOffset() * 60;
+
+                const response = await fetch(`${API_BASE}/api/activity/dates?tz_offset=${tzOffset}`);
+                const data = await response.json();
+                const dates = data.dates || [];
+
+                if (dates.length === 0) {
+                    updateStats([], 0, 0, 0, 0);
+                    return;
+                }
+
+                const recentDates = dates.slice(0, days);
+                const summaries = await Promise.all(
+                    recentDates.map(date =>
+                        fetch(`${API_BASE}/api/activity/summary/${date}?tz_offset=${tzOffset}`).then(r => r.json())
+                    )
+                );
+
+                updateCharts(summaries);
+                updateStats(summaries);
+                updateTable(summaries);
+            } catch (error) {
+                console.error('Error fetching data:', error);
+                document.getElementById('statusText').textContent = 'Error';
+                document.getElementById('statusDot').style.background = '#ff3b30';
+                document.getElementById('statusDot').style.animation = 'none';
+            }
+        }
+
+        function updateCharts(summaries) {
+            // Don't mutate the original array - make a copy for reversing
+            const sortedSummaries = [...summaries].reverse();
+
+            const stepsData = sortedSummaries.map(s => ({
+                x: new Date(s.date).getTime(),
+                y: s.steps
+            }));
+            charts.steps.updateSeries([{ data: stepsData }]);
+
+            const distanceData = sortedSummaries.map(s => ({
+                x: new Date(s.date).getTime(),
+                y: parseFloat((s.distance_meters / 1609.34).toFixed(2))
+            }));
+            charts.distance.updateSeries([{ data: distanceData }]);
+
+            const caloriesData = sortedSummaries.map(s => ({
+                x: new Date(s.date).getTime(),
+                y: s.calories
+            }));
+            charts.calories.updateSeries([{ data: caloriesData }]);
+
+            const calendarData = generateCalendarData(summaries);
+            charts.calendar.updateSeries(calendarData);
+        }
+
+        function generateCalendarData(summaries) {
+            const weeks = [];
+            const summaryMap = new Map(summaries.map(s => [s.date, s.steps]));
+
+            for (let i = 0; i < 7; i++) {
+                const weekData = [];
+                for (let j = 6; j >= 0; j--) {
+                    const date = new Date();
+                    date.setDate(date.getDate() - (i * 7 + j));
+                    const dateStr = date.toISOString().split('T')[0];
+                    weekData.push({
+                        x: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()],
+                        y: summaryMap.get(dateStr) || 0
+                    });
+                }
+                weeks.push({ name: `W${7-i}`, data: weekData });
+            }
+            return weeks.reverse();
+        }
+
+        function updateStats(summaries) {
+            const total = summaries.reduce((acc, s) => ({
+                steps: acc.steps + s.steps,
+                distance: acc.distance + s.distance_meters,
+                calories: acc.calories + s.calories,
+                duration: acc.duration + s.duration_seconds
+            }), { steps: 0, distance: 0, calories: 0, duration: 0 });
+
+            document.getElementById('totalSteps').textContent = formatNumber(total.steps);
+            document.getElementById('totalDistance').textContent = formatDistance(total.distance);
+            document.getElementById('totalCalories').textContent = formatNumber(total.calories);
+            document.getElementById('totalTime').textContent = formatDuration(total.duration);
+
+            // Only show comparison if we have at least 4 days of data (2 in each period)
+            const periodLength = summaries.length;
+            if (periodLength >= 4) {
+                const currentPeriod = summaries.slice(0, Math.floor(periodLength / 2));
+                const previousPeriod = summaries.slice(Math.floor(periodLength / 2));
+
+                const currentSteps = currentPeriod.reduce((sum, s) => sum + s.steps, 0);
+                const prevSteps = previousPeriod.reduce((sum, s) => sum + s.steps, 0);
+                const change = prevSteps > 0 ? ((currentSteps - prevSteps) / prevSteps * 100).toFixed(1) : 0;
+                document.getElementById('stepsChange').textContent = `${change >= 0 ? '+' : ''}${change}% vs previous period`;
+
+                const currentDist = currentPeriod.reduce((sum, s) => sum + s.distance_meters, 0);
+                const prevDist = previousPeriod.reduce((sum, s) => sum + s.distance_meters, 0);
+                const distChange = prevDist > 0 ? ((currentDist - prevDist) / prevDist * 100).toFixed(1) : 0;
+                document.getElementById('distanceChange').textContent = `${distChange >= 0 ? '+' : ''}${distChange}% vs previous period`;
+
+                const currentCal = currentPeriod.reduce((sum, s) => sum + s.calories, 0);
+                const prevCal = previousPeriod.reduce((sum, s) => sum + s.calories, 0);
+                const calChange = prevCal > 0 ? ((currentCal - prevCal) / prevCal * 100).toFixed(1) : 0;
+                document.getElementById('caloriesChange').textContent = `${calChange >= 0 ? '+' : ''}${calChange}% vs previous period`;
+
+                const currentTime = currentPeriod.reduce((sum, s) => sum + s.duration_seconds, 0);
+                const prevTime = previousPeriod.reduce((sum, s) => sum + s.duration_seconds, 0);
+                const timeChange = prevTime > 0 ? ((currentTime - prevTime) / prevTime * 100).toFixed(1) : 0;
+                document.getElementById('timeChange').textContent = `${timeChange >= 0 ? '+' : ''}${timeChange}% vs previous period`;
+            } else {
+                // Not enough data for meaningful comparison
+                const daysNeeded = 4 - periodLength;
+                const message = periodLength === 0 ? 'No data yet' :
+                               periodLength === 1 ? 'Need 3 more days for comparison' :
+                               `Need ${daysNeeded} more days for comparison`;
+                document.getElementById('stepsChange').textContent = message;
+                document.getElementById('distanceChange').textContent = message;
+                document.getElementById('caloriesChange').textContent = message;
+                document.getElementById('timeChange').textContent = message;
+            }
+        }
+
+        function updateTable(summaries) {
+            const tbody = document.getElementById('recentActivityTable');
+            tbody.innerHTML = summaries.slice(0, 10).map(s => `
+                <tr>
+                    <td>${parseLocalDate(s.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</td>
+                    <td>${formatNumber(s.steps)}</td>
+                    <td>${formatDistance(s.distance_meters)}</td>
+                    <td>${formatNumber(s.calories)}</td>
+                    <td>${formatDuration(s.duration_seconds)}</td>
+                </tr>
+            `).join('') || '<tr><td colspan="5" class="loading">No activity yet</td></tr>';
+        }
+
+        function connectWebSocket() {
+            ws = new WebSocket(WS_URL);
+
+            ws.onopen = () => {
+                console.log('WebSocket connected');
+                document.getElementById('statusText').textContent = 'Live';
+                document.getElementById('statusDot').style.background = '#34c759';
+                document.getElementById('statusDot').style.animation = 'pulse 2s ease-in-out infinite';
+            };
+
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.speed && data.speed > 0) {
+                    document.getElementById('liveWorkout').classList.remove('hidden');
+                    document.getElementById('liveSpeed').textContent = `${data.speed.toFixed(1)} m/s`;
+                    document.getElementById('liveSteps').textContent = formatNumber(data.steps_total || 0);
+                    document.getElementById('liveDistance').textContent = formatDistance(data.distance_total || 0);
+                    document.getElementById('liveCalories').textContent = formatNumber(data.calories_total || 0);
+                } else {
+                    document.getElementById('liveWorkout').classList.add('hidden');
+                    fetchData();
+                }
+            };
+
+            ws.onerror = (error) => {
+                console.error('WebSocket error:', error);
+                document.getElementById('statusText').textContent = 'Disconnected';
+                document.getElementById('statusDot').style.background = '#ff3b30';
+                document.getElementById('statusDot').style.animation = 'none';
+            };
+
+            ws.onclose = () => {
+                console.log('WebSocket disconnected, reconnecting...');
+                setTimeout(connectWebSocket, 5000);
+            };
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            initCharts();
+            fetchData();
+            connectWebSocket();
+            document.getElementById('timeRange').addEventListener('change', fetchData);
+            setInterval(fetchData, 60000);
+        });
+    </script>
+</body>
+</html>

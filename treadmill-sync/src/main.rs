@@ -87,9 +87,10 @@ async fn main() -> Result<()> {
     });
 
     info!("✨ Treadmill Sync Service is running!");
-    info!("📊 API available at http://localhost:{}", config.server.port);
-    info!("🔌 WebSocket available at ws://localhost:{}/ws/live", config.server.port);
-    info!("📝 Grafana setup: Use SQLite datasource with database at {}", config.database.path);
+    info!("📊 Dashboard: http://{}:{}", config.server.host, config.server.port);
+    info!("📈 API: http://{}:{}/api/health", config.server.host, config.server.port);
+    info!("🔌 WebSocket: ws://{}:{}/ws/live", config.server.host, config.server.port);
+    info!("💾 Database: {}", config.database.path);
     info!("⏹️  Press Ctrl+C to stop");
 
     // Wait for either task to complete (or Ctrl+C)
