@@ -109,10 +109,22 @@ impl BluetoothManager {
         peripheral.discover_services().await?;
         let chars = peripheral.characteristics();
 
+        // Log all discovered services and characteristics for debugging
+        info!("Discovered {} characteristics on treadmill", chars.len());
+        for (i, char) in chars.iter().enumerate() {
+            debug!("  [{}] Service: {}, Characteristic: {}, Properties: {:?}",
+                   i, char.service_uuid, char.uuid, char.properties);
+        }
+
         let treadmill_char = chars
             .iter()
             .find(|c| c.uuid == TREADMILL_DATA_UUID)
-            .ok_or_else(|| anyhow!("Treadmill data characteristic not found"))?;
+            .ok_or_else(|| {
+                warn!("FTMS Treadmill Data characteristic (UUID: {}) not found", TREADMILL_DATA_UUID);
+                warn!("Your treadmill may not support the standard FTMS protocol");
+                warn!("Check the characteristic list above to see what your treadmill exposes");
+                anyhow!("Treadmill data characteristic not found")
+            })?;
 
         // Subscribe to notifications
         peripheral.subscribe(treadmill_char).await?;
