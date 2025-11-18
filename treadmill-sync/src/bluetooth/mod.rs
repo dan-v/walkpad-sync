@@ -43,6 +43,13 @@ pub struct BluetoothManager {
     config: BluetoothConfig,
     status_tx: broadcast::Sender<ConnectionStatus>,
     current_workout_id: Arc<RwLock<Option<i64>>>,
+    workout_baseline: Arc<RwLock<Option<WorkoutBaseline>>>,
+}
+
+#[derive(Debug, Clone)]
+struct WorkoutBaseline {
+    start_distance: Option<u32>,
+    start_calories: Option<u16>,
 }
 
 impl BluetoothManager {
@@ -54,6 +61,7 @@ impl BluetoothManager {
             config,
             status_tx,
             current_workout_id: Arc::new(RwLock::new(None)),
+            workout_baseline: Arc::new(RwLock::new(None)),
         }, status_rx)
     }
 
@@ -189,7 +197,7 @@ impl BluetoothManager {
                         if reset_detected {
                             info!("Ending current workout due to treadmill reset (samples: {})", sample_count);
 
-                            // End the current workout
+                            // End the current workout (this clears baseline too)
                             if let Err(e) = self.end_workout().await {
                                 error!("Failed to end workout after reset: {}", e);
                             }
@@ -209,6 +217,15 @@ impl BluetoothManager {
                                     continue;
                                 }
                                 workout_started = true;
+
+                                // Capture new baseline for the new workout
+                                let mut baseline = self.workout_baseline.write().await;
+                                *baseline = Some(WorkoutBaseline {
+                                    start_distance: data.distance,
+                                    start_calories: data.total_energy,
+                                });
+                                info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
+                                      data.distance, data.total_energy);
                             }
                         }
                     }
@@ -228,6 +245,15 @@ impl BluetoothManager {
                             error!("Failed to start workout: {}", e);
                             continue;
                         }
+
+                        // Capture baseline cumulative values on first sample
+                        let mut baseline = self.workout_baseline.write().await;
+                        *baseline = Some(WorkoutBaseline {
+                            start_distance: data.distance,
+                            start_calories: data.total_energy,
+                        });
+                        info!("Workout baseline: distance={:?}m, calories={:?}kcal",
+                              data.distance, data.total_energy);
                     }
 
                     // Record sample if workout is active
@@ -319,14 +345,31 @@ impl BluetoothManager {
         if let Some(workout_id) = *current {
             let timestamp = Utc::now();
 
+            // Calculate deltas from workout baseline
+            let baseline = self.workout_baseline.read().await;
+            let (delta_distance, delta_calories) = if let Some(ref baseline) = *baseline {
+                let delta_dist = match (data.distance, baseline.start_distance) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                let delta_cal = match (data.total_energy, baseline.start_calories) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                (delta_dist, delta_cal)
+            } else {
+                // No baseline yet - store raw values (shouldn't happen normally)
+                (data.distance.map(|d| d as i64), data.total_energy.map(|e| e as i64))
+            };
+
             self.storage.add_sample(
                 workout_id,
                 timestamp,
                 data.speed,
                 data.incline,
-                data.distance.map(|d| d as i64),
+                delta_distance,
                 data.heart_rate.map(|hr| hr as i64),
-                data.total_energy.map(|e| e as i64),
+                delta_calories,
                 None, // cadence not available from treadmill
             ).await?;
         }
@@ -342,6 +385,12 @@ impl BluetoothManager {
             *current = None; // Clear immediately to allow new workouts
             id
         };
+
+        // Clear baseline for next workout
+        {
+            let mut baseline = self.workout_baseline.write().await;
+            *baseline = None;
+        }
 
         if let Some(workout_id) = workout_id {
             info!("Ending workout {}", workout_id);
