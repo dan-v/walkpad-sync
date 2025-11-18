@@ -96,7 +96,28 @@ class HealthKitManager {
         let start = session.startDate
         let end = session.lastUpdated ?? start
 
-        // Create samples
+        // Create workout builder
+        let builder = HKWorkoutBuilder(
+            healthStore: healthStore,
+            configuration: {
+                let config = HKWorkoutConfiguration()
+                config.activityType = .walking
+                config.locationType = .indoor
+                return config
+            }(),
+            device: .local()
+        )
+
+        // Set metadata
+        await builder.setMetadata([
+            HKMetadataKeyIndoorWorkout: true,
+            "TreadmillModel": "LifeSpan TR1200B",
+            "WorkoutType": "Desk Walking",
+            "SessionCount": session.activitySegments.count,
+            "AppVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        ])
+
+        // Create and add samples
         var samples: [HKQuantitySample] = []
 
         // Add steps sample
@@ -121,31 +142,15 @@ class HealthKitManager {
             samples.append(HKQuantitySample(type: calType, quantity: quantity, start: start, end: end))
         }
 
-        // Create metadata
-        let metadata: [String: Any] = [
-            HKMetadataKeyIndoorWorkout: true,
-            "TreadmillModel": "LifeSpan TR1200B",
-            "WorkoutType": "Desk Walking",
-            "SessionCount": session.activitySegments.count,
-            "AppVersion": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
-        ]
-
-        // Create workout
-        let workout = HKWorkout(
-            activityType: .walking,
-            start: start,
-            end: end,
-            duration: end.timeIntervalSince(start),
-            totalEnergyBurned: session.totalCalories > 0 ? HKQuantity(unit: .kilocalorie(), doubleValue: Double(session.totalCalories)) : nil,
-            totalDistance: session.totalDistanceMiles > 0 ? HKQuantity(unit: .mile(), doubleValue: session.totalDistanceMiles) : nil,
-            metadata: metadata
-        )
-
-        // Save workout and samples
-        try await healthStore.save(workout)
+        // Add samples to builder
         if !samples.isEmpty {
-            try await healthStore.save(samples)
+            try await builder.addSamples(samples)
         }
+
+        // Begin and finish workout collection
+        try await builder.beginCollection(at: start)
+        try await builder.endCollection(at: end)
+        let workout = try await builder.finishWorkout()
 
         print("✅ Workout saved to HealthKit")
 
