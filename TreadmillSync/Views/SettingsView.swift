@@ -1,227 +1,171 @@
-//
-//  SettingsView.swift
-//  TreadmillSync
-//
-//  App settings and configuration
-//
-
 import SwiftUI
 
 struct SettingsView: View {
-    @Environment(\.dismiss) private var dismiss
-    @Bindable var treadmillManager: TreadmillManager
-    @State private var healthManager = HealthKitManager.shared
-    @State private var showForgetConfirmation = false
-    @State private var isRequestingHealthAccess = false
+    @EnvironmentObject var syncManager: SyncManager
+    @Environment(\.dismiss) var dismiss
+
+    @State private var host: String
+    @State private var port: String
+    @State private var useHTTPS: Bool
+    @State private var isTestingConnection = false
+    @State private var connectionTestResult: ConnectionTestResult?
+    @State private var showingValidationError = false
+    @State private var validationErrorMessage = ""
+
+    init() {
+        let config = ServerConfig.load()
+        _host = State(initialValue: config.host)
+        _port = State(initialValue: String(config.port))
+        _useHTTPS = State(initialValue: config.useHTTPS)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                // Treadmill Section
+                // Server Configuration
                 Section {
+                    TextField("Host", text: $host)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.URL)
+
                     HStack {
-                        Label("Status", systemImage: "antenna.radiowaves.left.and.right")
+                        Text("Port")
                         Spacer()
-                        Text(treadmillManager.connectionState.description)
-                            .foregroundStyle(statusColor)
+                        TextField("Port", text: $port)
+                            .keyboardType(.numberPad)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
                     }
 
-                    if let savedUUID = UserDefaults.standard.string(forKey: "savedPeripheralUUID") {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Saved Device")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            Text(savedUUID)
-                                .font(.caption2.monospacedDigit())
-                                .foregroundStyle(.tertiary)
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-
-                        Button(role: .destructive, action: {
-                            showForgetConfirmation = true
-                        }) {
-                            Label("Forget Device", systemImage: "trash")
-                        }
-                    }
+                    Toggle("Use HTTPS", isOn: $useHTTPS)
                 } header: {
-                    Text("Treadmill")
+                    Text("Server Configuration")
                 } footer: {
-                    Text("TreadmillSync automatically connects to your LifeSpan TR1200B treadmill when it's powered on.")
+                    Text("Example: myserver.local or 192.168.1.100")
                 }
 
-                // HealthKit Section
+                // Test Connection
                 Section {
-                    HStack {
-                        Label("Authorization", systemImage: "heart.text.square")
-                        Spacer()
-                        if healthManager.isAuthorized {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        } else {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundStyle(.red)
-                        }
-                    }
-
-                    Button(action: requestHealthAuthorization) {
-                        if isRequestingHealthAccess {
-                            HStack {
+                    Button {
+                        testConnection()
+                    } label: {
+                        HStack {
+                            if isTestingConnection {
                                 ProgressView()
-                                Text("Requesting Access...")
+                            } else {
+                                Image(systemName: "network")
                             }
-                        } else {
-                            Label("Grant Health Access", systemImage: "arrow.clockwise")
+                            Text("Test Connection")
                         }
                     }
-                    .disabled(isRequestingHealthAccess)
+                    .disabled(isTestingConnection)
 
-                    Button(action: openHealthApp) {
-                        Label("Open Health App", systemImage: "heart.text.square.fill")
+                    if let result = connectionTestResult {
+                        HStack {
+                            Image(systemName: result.success ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(result.success ? .green : .red)
+                            Text(result.message)
+                                .foregroundColor(.secondary)
+                        }
                     }
-
-                    Button(action: openDataSourceSettings) {
-                        Label("Data Source Priority", systemImage: "list.number")
-                    }
-                } header: {
-                    Text("Apple Health")
-                } footer: {
-                    Text("For best results, set TreadmillSync as your #1 data source for steps in the Health app to prevent duplicate counting.")
                 }
 
-                // App Information
-                Section {
-                    HStack {
-                        Text("Version")
-                        Spacer()
-                        Text("1.0.0")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    HStack {
-                        Text("iOS Version")
-                        Spacer()
-                        Text("iOS 18+")
-                            .foregroundStyle(.secondary)
-                    }
-
-                    Link(destination: URL(string: "https://github.com/dan-v/lifespan-app")!) {
-                        Label("GitHub Repository", systemImage: "link")
-                    }
-                } header: {
-                    Text("About")
+                // Device Info
+                Section("Device Information") {
+                    LabeledContent("Device ID", value: UserDefaults.deviceID)
+                        .font(.caption)
                 }
 
-                // Privacy Section
-                Section {
-                    HStack {
-                        Label("Data Collection", systemImage: "eye.slash.fill")
-                        Spacer()
-                        Text("None")
-                            .foregroundStyle(.green)
-                    }
-
-                    HStack {
-                        Label("Data Storage", systemImage: "internaldrive")
-                        Spacer()
-                        Text("On-device only")
-                            .foregroundStyle(.green)
-                    }
-                } header: {
-                    Text("Privacy")
-                } footer: {
-                    Text("TreadmillSync does not collect any personal data. All workout data stays on your device and is only shared with Apple Health.")
-                }
-
-                // Advanced
-                Section {
-                    Button(action: resetApp) {
-                        Label("Reset All Data", systemImage: "arrow.counterclockwise.circle")
-                    }
-                    .foregroundStyle(.red)
-                } header: {
-                    Text("Advanced")
-                } footer: {
-                    Text("This will clear all stored data and reset the app to initial state.")
+                // About
+                Section("About") {
+                    LabeledContent("Version", value: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                    LabeledContent("Build", value: Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1")
                 }
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
                         dismiss()
                     }
                 }
-            }
-            .confirmationDialog(
-                "Forget Treadmill?",
-                isPresented: $showForgetConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Forget Device", role: .destructive) {
-                    treadmillManager.forgetDevice()
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveSettings()
+                    }
+                    .fontWeight(.semibold)
                 }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("This will remove the saved treadmill. You'll need to scan for it again on next use.")
             }
         }
-    }
-
-    private var statusColor: Color {
-        switch treadmillManager.connectionState {
-        case .connected:
-            return .green
-        case .connecting, .scanning:
-            return .blue
-        case .disconnected:
-            return .secondary
-        case .disconnectedBLEOff:
-            return .orange
-        case .error:
-            return .red
+        .alert("Invalid Settings", isPresented: $showingValidationError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(validationErrorMessage)
         }
     }
 
-    private func openHealthApp() {
-        if let url = URL(string: "x-apple-health://") {
-            UIApplication.shared.open(url)
+    private func testConnection() {
+        guard let portNum = Int(port) else {
+            connectionTestResult = ConnectionTestResult(success: false, message: "Invalid port number")
+            return
         }
-    }
 
-    private func openDataSourceSettings() {
-        openHealthApp()
-    }
+        let testConfig = ServerConfig(host: host, port: portNum, useHTTPS: useHTTPS)
+        let testClient = APIClient(config: testConfig)
 
-    private func requestHealthAuthorization() {
-        guard !isRequestingHealthAccess else { return }
-
-        isRequestingHealthAccess = true
+        isTestingConnection = true
+        connectionTestResult = nil
 
         Task {
             do {
-                try await healthManager.requestAuthorization()
+                let success = try await testClient.checkConnection()
+                connectionTestResult = ConnectionTestResult(
+                    success: success,
+                    message: success ? "Connected successfully" : "Connection failed"
+                )
             } catch {
-                print("Health authorization failed: \(error.localizedDescription)")
+                connectionTestResult = ConnectionTestResult(
+                    success: false,
+                    message: "Error: \(error.localizedDescription)"
+                )
             }
-
-            await MainActor.run {
-                isRequestingHealthAccess = false
-            }
+            isTestingConnection = false
         }
     }
 
-    private func resetApp() {
-        // Clear all stored data
-        treadmillManager.forgetDevice()
-        DailySessionManager.shared.resetSession()
-        UserDefaults.standard.removeObject(forKey: "dailySessionState")
-        UserDefaults.standard.removeObject(forKey: "savedPeripheralUUID")
-        print("🔄 App data reset")
+    private func saveSettings() {
+        // Validate host
+        let trimmedHost = host.trimmingCharacters(in: .whitespaces)
+        if trimmedHost.isEmpty {
+            validationErrorMessage = "Server host cannot be empty"
+            showingValidationError = true
+            return
+        }
+
+        // Validate port
+        guard let portNum = Int(port), portNum > 0, portNum <= 65535 else {
+            validationErrorMessage = "Port must be a number between 1 and 65535"
+            showingValidationError = true
+            return
+        }
+
+        let config = ServerConfig(host: trimmedHost, port: portNum, useHTTPS: useHTTPS)
+
+        Task {
+            await syncManager.updateServerConfig(config)
+            dismiss()
+        }
     }
 }
 
+struct ConnectionTestResult {
+    let success: Bool
+    let message: String
+}
+
 #Preview {
-    SettingsView(treadmillManager: TreadmillManager())
+    SettingsView()
+        .environmentObject(SyncManager())
 }
