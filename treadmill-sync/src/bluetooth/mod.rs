@@ -217,6 +217,11 @@ impl BluetoothManager {
         let zero_speed_threshold = self.config.workout_end_timeout_secs;
         let mut last_distance: Option<u32> = None;
         let mut last_calories: Option<u16> = None;
+        let mut reset_detection_count = 0; // Track consecutive reset detections
+        // Track distance/calories from 10 samples ago to detect slow updates
+        let mut distance_10_samples_ago: Option<u32> = None;
+        let mut calories_10_samples_ago: Option<u16> = None;
+        let mut samples_since_progress_check = 0;
 
         // For LifeSpan protocol: track pending queries with shared queue
         let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
@@ -338,58 +343,78 @@ impl BluetoothManager {
 
                     // Detect treadmill reset (cumulative values decreased significantly)
                     if workout_started {
-                        let mut reset_detected = false;
+                        let mut reset_detected_this_sample = false;
 
                         if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
-                            // If distance decreased by more than 10 meters, consider it a reset
+                            // If distance decreased by more than 10 meters, flag as potential reset
                             if current_distance < prev_distance.saturating_sub(10) {
-                                warn!("Treadmill reset detected: distance dropped from {}m to {}m",
+                                warn!("Potential treadmill reset: distance dropped from {}m to {}m",
                                       prev_distance, current_distance);
-                                reset_detected = true;
+                                reset_detected_this_sample = true;
                             }
                         }
 
-                        if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
-                            // If calories decreased by more than 5, consider it a reset
-                            if current_calories < prev_calories.saturating_sub(5) {
-                                warn!("Treadmill reset detected: calories dropped from {} to {}",
-                                      prev_calories, current_calories);
-                                reset_detected = true;
-                            }
-                        }
-
-                        if reset_detected {
-                            info!("Ending current workout due to treadmill reset (samples: {})", sample_count);
-
-                            // End the current workout (this clears baseline too)
-                            if let Err(e) = self.end_workout().await {
-                                error!("Failed to end workout after reset: {}", e);
-                            }
-
-                            // Reset state
-                            workout_started = false;
-                            sample_count = 0;
-                            zero_speed_count = 0;
-                            last_distance = None;
-                            last_calories = None;
-
-                            // If treadmill is still moving, start a new workout immediately
-                            if current_speed > 0.1 {
-                                info!("Starting new workout after reset (speed: {:.2} m/s)", current_speed);
-                                if let Err(e) = self.start_workout().await {
-                                    error!("Failed to start workout after reset: {}", e);
-                                    continue;
+                        if !reset_detected_this_sample {
+                            if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
+                                // If calories decreased by more than 5, flag as potential reset
+                                if current_calories < prev_calories.saturating_sub(5) {
+                                    warn!("Potential treadmill reset: calories dropped from {} to {}",
+                                          prev_calories, current_calories);
+                                    reset_detected_this_sample = true;
                                 }
-                                workout_started = true;
+                            }
+                        }
 
-                                // Capture new baseline for the new workout
-                                let mut baseline = self.workout_baseline.write().await;
-                                *baseline = Some(WorkoutBaseline {
-                                    start_distance: data.distance,
-                                    start_calories: data.total_energy,
-                                });
-                                info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
-                                      data.distance, data.total_energy);
+                        if reset_detected_this_sample {
+                            reset_detection_count += 1;
+
+                            // Require 3 consecutive readings showing a reset before ending workout
+                            if reset_detection_count >= 3 {
+                                warn!("Treadmill reset confirmed after {} consecutive readings", reset_detection_count);
+                                info!("Ending current workout due to treadmill reset (samples: {})", sample_count);
+
+                                // End the current workout (this clears baseline too)
+                                if let Err(e) = self.end_workout().await {
+                                    error!("Failed to end workout after reset: {}", e);
+                                }
+
+                                // Reset state
+                                workout_started = false;
+                                sample_count = 0;
+                                zero_speed_count = 0;
+                                reset_detection_count = 0;
+                                last_distance = None;
+                                last_calories = None;
+                                distance_10_samples_ago = None;
+                                calories_10_samples_ago = None;
+                                samples_since_progress_check = 0;
+
+                                // If treadmill is still moving, start a new workout immediately
+                                if current_speed > 0.1 {
+                                    info!("Starting new workout after reset (speed: {:.2} m/s)", current_speed);
+                                    if let Err(e) = self.start_workout().await {
+                                        error!("Failed to start workout after reset: {}", e);
+                                        continue;
+                                    }
+                                    workout_started = true;
+
+                                    // Capture new baseline for the new workout
+                                    let mut baseline = self.workout_baseline.write().await;
+                                    *baseline = Some(WorkoutBaseline {
+                                        start_distance: data.distance,
+                                        start_calories: data.total_energy,
+                                    });
+                                    info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
+                                          data.distance, data.total_energy);
+                                }
+                            } else {
+                                debug!("Reset detection count: {}/3", reset_detection_count);
+                            }
+                        } else {
+                            // No reset detected, clear counter
+                            if reset_detection_count > 0 {
+                                debug!("Reset detection cleared (was at {}/3)", reset_detection_count);
+                                reset_detection_count = 0;
                             }
                         }
                     }
@@ -436,8 +461,26 @@ impl BluetoothManager {
                             _ => false,
                         };
 
-                        // Only count as "inactive" if speed is 0 AND neither distance nor calories changed
-                        let is_inactive = current_speed < 0.1 && !distance_changed && !calories_changed;
+                        // Update progress check every 10 samples
+                        samples_since_progress_check += 1;
+                        if samples_since_progress_check >= 10 {
+                            distance_10_samples_ago = last_distance;
+                            calories_10_samples_ago = last_calories;
+                            samples_since_progress_check = 0;
+                        }
+
+                        // Check if there's been ANY progress over the last ~10 samples
+                        let has_recent_progress = match (data.distance, distance_10_samples_ago) {
+                            (Some(curr), Some(old)) => curr > old,
+                            _ => false,
+                        } || match (data.total_energy, calories_10_samples_ago) {
+                            (Some(curr), Some(old)) => curr > old,
+                            _ => false,
+                        };
+
+                        // Only count as "inactive" if speed is 0 AND no progress in last 10 samples
+                        // This handles treadmills that report speed=0 but update distance slowly
+                        let is_inactive = current_speed < 0.1 && !has_recent_progress;
 
                         if is_inactive {
                             zero_speed_count += 1;
@@ -457,14 +500,18 @@ impl BluetoothManager {
                                     workout_started = false;
                                     sample_count = 0;
                                     zero_speed_count = 0;
+                                    reset_detection_count = 0;
                                     last_distance = None;
                                     last_calories = None;
+                                    distance_10_samples_ago = None;
+                                    calories_10_samples_ago = None;
+                                    samples_since_progress_check = 0;
                                 }
                             }
                         } else {
                             // Reset counter if any activity detected
                             if zero_speed_count > 0 {
-                                debug!("Activity detected (speed or distance/calories changed), resetting end-workout timer");
+                                debug!("Activity detected (speed > 0 or progress in distance/calories), resetting end-workout timer");
                                 zero_speed_count = 0;
                             }
                         }
