@@ -15,7 +15,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
-use ftms::{parse_treadmill_data, TreadmillData, TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID};
+use ftms::{
+    parse_treadmill_data, parse_lifespan_response, TreadmillData,
+    TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, LifeSpanQuery,
+};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -143,9 +146,20 @@ impl BluetoothManager {
         peripheral.subscribe(treadmill_char).await?;
         info!("Subscribed to treadmill data notifications");
 
+        // Send handshake if using LifeSpan protocol
+        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
+            info!("Sending LifeSpan handshake sequence ({} commands)...", LIFESPAN_HANDSHAKE.len());
+            for (i, cmd) in LIFESPAN_HANDSHAKE.iter().enumerate() {
+                peripheral.write(treadmill_char, cmd, btleplug::api::WriteType::WithResponse).await?;
+                debug!("Sent handshake command {}/{}: {:02X?}", i + 1, LIFESPAN_HANDSHAKE.len(), cmd);
+                sleep(Duration::from_millis(100)).await;
+            }
+            info!("Handshake complete");
+        }
+
         let _ = self.status_tx.send(ConnectionStatus::Connected);
 
-        // Monitor notifications
+        // Monitor notifications (will poll for LifeSpan or passively listen for FTMS)
         self.monitor_notifications(&peripheral, treadmill_char).await?;
 
         Ok(())
@@ -204,26 +218,96 @@ impl BluetoothManager {
         let mut last_distance: Option<u32> = None;
         let mut last_calories: Option<u16> = None;
 
+        // For LifeSpan protocol: track pending queries with shared queue
+        let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
+        let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
+
+        // Start polling task for LifeSpan protocol
+        let poll_task = if is_lifespan {
+            let peripheral = peripheral.clone();
+            let char = char.clone();
+            let pending_queries = pending_queries.clone();
+
+            Some(tokio::spawn(async move {
+                let queries = LifeSpanQuery::all_queries();
+                let query_delay = Duration::from_millis(300);
+
+                loop {
+                    for query in &queries {
+                        let cmd = query.command();
+                        if let Err(e) = peripheral.write(&char, &cmd, btleplug::api::WriteType::WithResponse).await {
+                            error!("Failed to write LifeSpan query {:?}: {}", query, e);
+                            return;
+                        }
+
+                        // Enqueue the query we just sent
+                        {
+                            let mut queue = pending_queries.write().await;
+                            queue.push_back(*query);
+                            // Prevent runaway queue if treadmill stops responding
+                            if queue.len() > 20 {
+                                queue.pop_front();
+                            }
+                        }
+
+                        debug!("Sent LifeSpan query: {:?}", query);
+                        tokio::time::sleep(query_delay).await;
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         while let Some(notification) = notification_stream.next().await {
             if notification.uuid != char.uuid {
                 continue;
             }
 
-            // Log raw data for LifeSpan proprietary protocol to help reverse-engineer it
-            if char.uuid == LIFESPAN_DATA_UUID {
-                info!("LifeSpan RAW DATA ({} bytes): {:02X?}", notification.value.len(), notification.value);
-                // Also log as ASCII for any readable text
-                let ascii: String = notification.value.iter()
-                    .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
-                    .collect();
-                debug!("LifeSpan ASCII: \"{}\"", ascii);
+            // Handle LifeSpan vs FTMS protocol
+            let data = if is_lifespan {
+                // Dequeue the pending query
+                let query = {
+                    let mut queue = pending_queries.write().await;
+                    queue.pop_front()
+                };
+
+                if let Some(query) = query {
+                    // Parse response for this specific query
+                    match parse_lifespan_response(&notification.value, query) {
+                        Ok(partial_data) => {
+                            // We get partial data from each query - we'd need to accumulate
+                            // For now, just process what we have
+                            partial_data
+                        }
+                        Err(e) => {
+                            debug!("Failed to parse LifeSpan response for {:?}: {}", query, e);
+                            continue;
+                        }
+                    }
+                } else {
+                    debug!("Received LifeSpan data with no pending query");
+                    continue;
+                }
+            } else {
+                // Parse standard FTMS protocol
+                match parse_treadmill_data(&notification.value) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        warn!("Failed to parse FTMS treadmill data: {}", e);
+                        continue;
+                    }
+                }
+            };
+
+            // For LifeSpan, skip responses that don't contain useful data (like Steps which we don't use)
+            if is_lifespan && data.speed.is_none() && data.distance.is_none() && data.total_energy.is_none() && data.elapsed_time.is_none() {
+                continue;
             }
 
-            match parse_treadmill_data(&notification.value) {
-                Ok(data) => {
-                    let current_speed = data.speed.unwrap_or(0.0);
-                    debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, samples={}",
-                           current_speed, data.incline.unwrap_or(0.0), data.distance, sample_count);
+            let current_speed = data.speed.unwrap_or(0.0);
+            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
+                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
                     if workout_started {
@@ -348,16 +432,6 @@ impl BluetoothManager {
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    if char.uuid == LIFESPAN_DATA_UUID {
-                        // Expected - we haven't implemented LifeSpan parser yet
-                        debug!("LifeSpan data parsing not yet implemented (raw data logged above): {}", e);
-                    } else {
-                        warn!("Failed to parse treadmill data: {}", e);
-                    }
-                }
-            }
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
@@ -373,6 +447,11 @@ impl BluetoothManager {
 
                 return Err(anyhow!("Connection lost"));
             }
+        }
+
+        // Cancel polling task if it exists
+        if let Some(task) = poll_task {
+            task.abort();
         }
 
         Ok(())
