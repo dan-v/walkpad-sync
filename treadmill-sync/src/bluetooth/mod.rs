@@ -394,10 +394,6 @@ impl BluetoothManager {
                         }
                     }
 
-                    // Track last cumulative values for reset detection
-                    last_distance = data.distance;
-                    last_calories = data.total_energy;
-
                     // Detect workout start (speed > 0)
                     if !workout_started && current_speed > 0.1 {
                         info!("Workout started! Initial speed: {:.2} m/s", current_speed);
@@ -428,8 +424,22 @@ impl BluetoothManager {
                             sample_count += 1;
                         }
 
-                        // Detect workout end (speed = 0 for sustained period)
-                        if current_speed < 0.1 {
+                        // Detect workout end (no activity for sustained period)
+                        // Check if distance or calories have changed since last sample
+                        let distance_changed = match (data.distance, last_distance) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        let calories_changed = match (data.total_energy, last_calories) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        // Only count as "inactive" if speed is 0 AND neither distance nor calories changed
+                        let is_inactive = current_speed < 0.1 && !distance_changed && !calories_changed;
+
+                        if is_inactive {
                             zero_speed_count += 1;
 
                             if zero_speed_count == 10 {
@@ -438,7 +448,7 @@ impl BluetoothManager {
                             }
 
                             if zero_speed_count >= zero_speed_threshold {
-                                info!("Workout ended after {} seconds of zero speed. Total samples: {}",
+                                info!("Workout ended after {} seconds of inactivity. Total samples: {}",
                                       zero_speed_count, sample_count);
 
                                 if let Err(e) = self.end_workout().await {
@@ -452,13 +462,17 @@ impl BluetoothManager {
                                 }
                             }
                         } else {
-                            // Reset counter if speed picks back up
+                            // Reset counter if any activity detected
                             if zero_speed_count > 0 {
-                                debug!("Speed resumed, resetting end-workout timer");
+                                debug!("Activity detected (speed or distance/calories changed), resetting end-workout timer");
                                 zero_speed_count = 0;
                             }
                         }
                     }
+
+                    // Track last cumulative values for next iteration (after workout end detection)
+                    last_distance = data.distance;
+                    last_calories = data.total_energy;
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
