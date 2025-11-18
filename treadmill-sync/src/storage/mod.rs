@@ -1,7 +1,8 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use sqlx::{FromRow, SqlitePool};
+use sqlx::{sqlite::SqliteConnectOptions, FromRow, SqlitePool};
+use std::str::FromStr;
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Workout {
@@ -52,8 +53,12 @@ pub struct Storage {
 
 impl Storage {
     pub async fn new(database_url: &str) -> Result<Self> {
+        // Parse connection options and enable create_if_missing
+        let options = SqliteConnectOptions::from_str(database_url)?
+            .create_if_missing(true);
+
         // Create database if it doesn't exist
-        let pool = SqlitePool::connect(database_url).await?;
+        let pool = SqlitePool::connect_with(options).await?;
 
         // Run migrations
         let schema = include_str!("../../schema.sql");
