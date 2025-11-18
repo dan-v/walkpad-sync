@@ -3,6 +3,7 @@ import SwiftUI
 struct ContentView: View {
     @EnvironmentObject var syncManager: SyncManager
     @State private var showingSettings = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         NavigationStack {
@@ -19,6 +20,9 @@ struct ContentView: View {
                 }
                 .sheet(isPresented: $showingSettings) {
                     SettingsView()
+                }
+                .sheet(isPresented: .constant(!hasCompletedOnboarding)) {
+                    OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
                 }
         }
     }
