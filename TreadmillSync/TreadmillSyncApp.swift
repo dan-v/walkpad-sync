@@ -1,16 +1,11 @@
 import SwiftUI
+import BackgroundTasks
 
 @main
 struct TreadmillSyncApp: App {
     @StateObject private var syncManager = SyncManager()
-    @StateObject private var healthKitManager = HealthKitManager()
 
     init() {
-        // Request HealthKit permissions on launch
-        Task {
-            await HealthKitManager.shared.requestAuthorization()
-        }
-
         // Register for background refresh
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: "com.treadmillsync.refresh",
@@ -24,8 +19,10 @@ struct TreadmillSyncApp: App {
         WindowGroup {
             ContentView()
                 .environmentObject(syncManager)
-                .environmentObject(healthKitManager)
                 .task {
+                    // Request HealthKit permissions on launch
+                    try? await HealthKitManager.shared.requestAuthorization()
+
                     // Sync on app launch
                     await syncManager.syncIfNeeded()
                 }
@@ -68,5 +65,3 @@ struct TreadmillSyncApp: App {
         }
     }
 }
-
-import BackgroundTasks
