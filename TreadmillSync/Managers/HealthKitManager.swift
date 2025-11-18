@@ -109,7 +109,7 @@ class HealthKitManager {
         )
 
         // Add metadata
-        await builder.addMetadata([
+        try await builder.addMetadata([
             HKMetadataKeyIndoorWorkout: true,
             "TreadmillModel": "LifeSpan TR1200B",
             "WorkoutType": "Desk Walking",
@@ -150,7 +150,7 @@ class HealthKitManager {
         // Begin and finish workout collection
         try await builder.beginCollection(at: start)
         try await builder.endCollection(at: end)
-        let workout = try await builder.finishWorkout()
+        _ = try await builder.finishWorkout()
 
         print("✅ Workout saved to HealthKit")
 
