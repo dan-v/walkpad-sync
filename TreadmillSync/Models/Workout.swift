@@ -1,5 +1,27 @@
 import Foundation
 
+// MARK: - Cached Formatters
+
+private enum DateFormatters {
+    static let iso8601: ISO8601DateFormatter = {
+        ISO8601DateFormatter()
+    }()
+
+    static let display: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        return formatter
+    }()
+
+    static let dateOnly: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .none
+        return formatter
+    }()
+}
+
 // MARK: - API Response Models
 
 struct PendingWorkoutsResponse: Codable {
@@ -47,12 +69,12 @@ struct Workout: Codable, Identifiable {
 
     // Computed properties for display
     var start: Date? {
-        ISO8601DateFormatter().date(from: startTime)
+        DateFormatters.iso8601.date(from: startTime)
     }
 
     var end: Date? {
         guard let endTime = endTime else { return nil }
-        return ISO8601DateFormatter().date(from: endTime)
+        return DateFormatters.iso8601.date(from: endTime)
     }
 
     var durationFormatted: String {
@@ -81,10 +103,7 @@ struct Workout: Codable, Identifiable {
 
     var dateFormatted: String {
         guard let start = start else { return "Unknown" }
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        return formatter.string(from: start)
+        return DateFormatters.display.string(from: start)
     }
 }
 
@@ -114,7 +133,7 @@ struct WorkoutSample: Codable, Identifiable {
     }
 
     var date: Date? {
-        ISO8601DateFormatter().date(from: timestamp)
+        DateFormatters.iso8601.date(from: timestamp)
     }
 }
 

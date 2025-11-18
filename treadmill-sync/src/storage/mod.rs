@@ -220,6 +220,28 @@ impl Storage {
         Ok(samples)
     }
 
+    pub async fn get_latest_sample(&self, workout_id: i64) -> Result<Option<WorkoutSample>> {
+        let sample = sqlx::query_as::<_, WorkoutSample>(
+            "SELECT * FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1"
+        )
+        .bind(workout_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(sample)
+    }
+
+    pub async fn get_first_sample_timestamp(&self, workout_id: i64) -> Result<Option<String>> {
+        let row = sqlx::query(
+            "SELECT timestamp FROM workout_samples WHERE workout_id = ? ORDER BY timestamp ASC LIMIT 1"
+        )
+        .bind(workout_id)
+        .fetch_optional(&self.pool)
+        .await?;
+
+        Ok(row.map(|r| r.get("timestamp")))
+    }
+
     // Sync client operations
     pub async fn register_sync_client(&self, device_id: &str, device_name: Option<&str>) -> Result<()> {
         let last_seen = Utc::now().to_rfc3339();

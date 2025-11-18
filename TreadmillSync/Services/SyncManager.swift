@@ -10,6 +10,7 @@ class SyncManager: ObservableObject {
     @Published var serverConfig = ServerConfig.load()
     @Published var isConnected = false
     @Published var pendingCount: Int = 0
+    @Published var syncSuccessMessage: String?
 
     private var apiClient: APIClient {
         APIClient(config: serverConfig)
@@ -76,6 +77,7 @@ class SyncManager: ObservableObject {
 
         isSyncing = true
         syncError = nil
+        syncSuccessMessage = nil
 
         do {
             // Check connection first
@@ -134,7 +136,9 @@ class SyncManager: ObservableObject {
     // MARK: - Notifications
 
     private func showSuccessNotification(count: Int) {
-        // TODO: Show user notification or toast
-        print("Successfully synced \(count) workout(s) to Health")
+        let message = count == 1
+            ? "Successfully synced 1 workout to Apple Health"
+            : "Successfully synced \(count) workouts to Apple Health"
+        syncSuccessMessage = message
     }
 }

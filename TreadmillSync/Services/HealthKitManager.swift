@@ -5,12 +5,21 @@ class HealthKitManager: ObservableObject {
 
     private let healthStore = HKHealthStore()
 
-    private let typesToWrite: Set<HKSampleType> = [
-        HKObjectType.workoutType(),
-        HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
-        HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
-        HKQuantityType.quantityType(forIdentifier: .heartRate)!
-    ]
+    private lazy var typesToWrite: Set<HKSampleType> = {
+        var types: Set<HKSampleType> = [HKObjectType.workoutType()]
+
+        if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+            types.insert(distanceType)
+        }
+        if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+            types.insert(energyType)
+        }
+        if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            types.insert(heartRateType)
+        }
+
+        return types
+    }()
 
     // MARK: - Authorization
 
@@ -55,10 +64,11 @@ class HealthKitManager: ObservableObject {
             guard let sampleDate = sample.date else { continue }
 
             // Heart rate samples
-            if let hr = sample.heartRate, hr > 0 {
+            if let hr = sample.heartRate, hr > 0,
+               let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
                 let hrQuantity = HKQuantity(unit: HKUnit.count().unitDivided(by: .minute()), doubleValue: Double(hr))
                 let hrSample = HKQuantitySample(
-                    type: HKQuantityType.quantityType(forIdentifier: .heartRate)!,
+                    type: heartRateType,
                     quantity: hrQuantity,
                     start: sampleDate,
                     end: sampleDate
@@ -67,10 +77,11 @@ class HealthKitManager: ObservableObject {
             }
 
             // Distance samples (cumulative)
-            if let distance = sample.distance, distance > 0 {
+            if let distance = sample.distance, distance > 0,
+               let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
                 let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: Double(distance))
                 let distanceSample = HKQuantitySample(
-                    type: HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!,
+                    type: distanceType,
                     quantity: distanceQuantity,
                     start: sampleDate,
                     end: sampleDate
@@ -79,10 +90,11 @@ class HealthKitManager: ObservableObject {
             }
 
             // Energy samples (cumulative)
-            if let calories = sample.calories, calories > 0 {
+            if let calories = sample.calories, calories > 0,
+               let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
                 let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: Double(calories))
                 let energySample = HKQuantitySample(
-                    type: HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!,
+                    type: energyType,
                     quantity: energyQuantity,
                     start: sampleDate,
                     end: sampleDate

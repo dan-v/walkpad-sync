@@ -382,13 +382,14 @@ impl BluetoothManager {
         let current = self.current_workout_id.read().await;
 
         if let Some(workout_id) = *current {
-            let samples = self.storage.get_samples(workout_id).await?;
+            // Fetch only the latest sample (memory efficient)
+            let last_sample = self.storage.get_latest_sample(workout_id).await?;
 
-            if let Some(last_sample) = samples.last() {
+            if let Some(last_sample) = last_sample {
                 // Calculate elapsed time from first to last sample
-                let elapsed_time = if let Some(first_sample) = samples.first() {
+                let elapsed_time = if let Some(first_timestamp) = self.storage.get_first_sample_timestamp(workout_id).await? {
                     match (
-                        chrono::DateTime::parse_from_rfc3339(&first_sample.timestamp),
+                        chrono::DateTime::parse_from_rfc3339(&first_timestamp),
                         chrono::DateTime::parse_from_rfc3339(&last_sample.timestamp)
                     ) {
                         (Ok(first), Ok(last)) => Some((last - first).num_seconds() as u16),

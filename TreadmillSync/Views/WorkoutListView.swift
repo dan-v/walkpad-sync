@@ -142,6 +142,13 @@ struct WorkoutListView: View {
         } message: {
             Text(syncManager.syncError?.localizedDescription ?? "Unknown error")
         }
+        .alert("Sync Complete", isPresented: .constant(syncManager.syncSuccessMessage != nil)) {
+            Button("OK") {
+                syncManager.syncSuccessMessage = nil
+            }
+        } message: {
+            Text(syncManager.syncSuccessMessage ?? "")
+        }
     }
 
     // Group workouts by date
