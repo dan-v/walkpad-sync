@@ -293,13 +293,13 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 
     match query {
         LifeSpanQuery::Speed => {
-            // Speed format: bytes[3] (integer mph) + bytes[4]/100 (decimal)
-            if data.len() < 5 {
+            // Speed format: bytes[3] is tenths of mph (not integer + decimal)
+            // Example: 0x28 (40 decimal) = 4.0 mph
+            if data.len() < 4 {
                 return Err(anyhow!("LifeSpan speed data too short"));
             }
-            let integer_part = data[3] as f64;
-            let decimal_part = data[4] as f64 / 100.0;
-            let speed_mph = integer_part + decimal_part;
+            let speed_tenths = data[3] as f64;
+            let speed_mph = speed_tenths / 10.0;
 
             // Convert mph to m/s (1 mph = 0.44704 m/s)
             let speed_ms = speed_mph * 0.44704;
@@ -307,30 +307,30 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Validate: speed should be reasonable (0-10 mph for walking)
             if speed_mph >= 0.0 && speed_mph <= 10.0 {
                 result.speed = Some(speed_ms);
-                debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
+                debug!("LifeSpan speed: {:.1} mph = {:.2} m/s", speed_mph, speed_ms);
             } else {
-                debug!("Invalid speed: {:.2} mph", speed_mph);
+                debug!("Invalid speed: {:.1} mph", speed_mph);
             }
         }
 
         LifeSpanQuery::Distance => {
-            // Distance format: bytes[3] (integer miles) + bytes[4]/100 (decimal)
+            // Distance format: bytes[3-4] as 16-bit LE representing hundredths of miles
+            // Example: 0x0001 = 1 hundredth = 0.01 miles
             if data.len() < 5 {
                 return Err(anyhow!("LifeSpan distance data too short"));
             }
-            let integer_part = data[3] as f64;
-            let decimal_part = data[4] as f64 / 100.0;
-            let distance_miles = integer_part + decimal_part;
+            let distance_hundredths = u16::from_le_bytes([data[3], data[4]]);
+            let distance_miles = distance_hundredths as f64 / 100.0;
 
             // Convert miles to meters (1 mile = 1609.34 meters)
             let distance_meters = (distance_miles * 1609.34) as u32;
 
-            // Validate: distance should be reasonable (0-50 miles)
-            if distance_miles >= 0.0 && distance_miles <= 50.0 {
+            // Validate: distance should be reasonable (0-50 miles = 0-5000 hundredths)
+            if distance_hundredths <= 5000 {
                 result.distance = Some(distance_meters);
                 debug!("LifeSpan distance: {:.2} miles = {} meters", distance_miles, distance_meters);
             } else {
-                debug!("Invalid distance: {:.2} miles", distance_miles);
+                debug!("Invalid distance: {} hundredths ({:.2} miles)", distance_hundredths, distance_miles);
             }
         }
 
