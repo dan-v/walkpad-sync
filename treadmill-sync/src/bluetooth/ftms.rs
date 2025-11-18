@@ -293,12 +293,16 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 
     match query {
         LifeSpanQuery::Speed => {
-            // Speed format: bytes[3] is hundredths of mph
-            // Example: 0x28 (40 decimal) = 0.40 mph
+            // Speed format: bytes[2] and bytes[3] encode hundredths of mph
+            // Formula: speed_hundredths = bytes[2] * 50 + bytes[3]
+            // Examples:
+            //   [A1, AA, 00, 50] = 0*50 + 80 = 80 hundredths = 0.80 mph
+            //   [A1, AA, 02, 00] = 2*50 + 0 = 100 hundredths = 1.00 mph
+            //   [A1, AA, 02, 0A] = 2*50 + 10 = 110 hundredths = 1.10 mph
             if data.len() < 4 {
                 return Err(anyhow!("LifeSpan speed data too short"));
             }
-            let speed_hundredths = data[3] as f64;
+            let speed_hundredths = (data[2] as f64 * 50.0) + data[3] as f64;
             let speed_mph = speed_hundredths / 100.0;
 
             // Convert mph to m/s (1 mph = 0.44704 m/s)
