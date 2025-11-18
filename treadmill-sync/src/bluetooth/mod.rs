@@ -15,7 +15,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
-use ftms::{parse_treadmill_data, TreadmillData, TREADMILL_DATA_UUID};
+use ftms::{parse_treadmill_data, TreadmillData, TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -116,15 +116,28 @@ impl BluetoothManager {
                    i, char.service_uuid, char.uuid, char.properties);
         }
 
+        // Try to find FTMS characteristic first, then fall back to LifeSpan proprietary
         let treadmill_char = chars
             .iter()
             .find(|c| c.uuid == TREADMILL_DATA_UUID)
+            .or_else(|| {
+                debug!("FTMS characteristic not found, trying LifeSpan proprietary protocol...");
+                chars.iter().find(|c| c.uuid == LIFESPAN_DATA_UUID)
+            })
             .ok_or_else(|| {
-                warn!("FTMS Treadmill Data characteristic (UUID: {}) not found", TREADMILL_DATA_UUID);
-                warn!("Your treadmill may not support the standard FTMS protocol");
+                warn!("Neither FTMS (UUID: {}) nor LifeSpan (UUID: {}) characteristic found",
+                      TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID);
+                warn!("Your treadmill may use a different protocol");
                 warn!("Check the characteristic list above to see what your treadmill exposes");
                 anyhow!("Treadmill data characteristic not found")
             })?;
+
+        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
+            info!("Using LifeSpan proprietary protocol (UUID: {})", LIFESPAN_DATA_UUID);
+            info!("Will log raw data to help reverse-engineer the protocol format");
+        } else {
+            info!("Using standard FTMS protocol (UUID: {})", TREADMILL_DATA_UUID);
+        }
 
         // Subscribe to notifications
         peripheral.subscribe(treadmill_char).await?;
@@ -194,6 +207,16 @@ impl BluetoothManager {
         while let Some(notification) = notification_stream.next().await {
             if notification.uuid != char.uuid {
                 continue;
+            }
+
+            // Log raw data for LifeSpan proprietary protocol to help reverse-engineer it
+            if char.uuid == LIFESPAN_DATA_UUID {
+                info!("LifeSpan RAW DATA ({} bytes): {:02X?}", notification.value.len(), notification.value);
+                // Also log as ASCII for any readable text
+                let ascii: String = notification.value.iter()
+                    .map(|&b| if b.is_ascii_graphic() || b == b' ' { b as char } else { '.' })
+                    .collect();
+                debug!("LifeSpan ASCII: \"{}\"", ascii);
             }
 
             match parse_treadmill_data(&notification.value) {
@@ -327,7 +350,12 @@ impl BluetoothManager {
                     }
                 }
                 Err(e) => {
-                    warn!("Failed to parse treadmill data: {}", e);
+                    if char.uuid == LIFESPAN_DATA_UUID {
+                        // Expected - we haven't implemented LifeSpan parser yet
+                        debug!("LifeSpan data parsing not yet implemented (raw data logged above): {}", e);
+                    } else {
+                        warn!("Failed to parse treadmill data: {}", e);
+                    }
                 }
             }
 
