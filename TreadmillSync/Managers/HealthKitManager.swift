@@ -33,17 +33,11 @@ class HealthKitManager {
     // MARK: - Published State
 
     private(set) var isAuthorized = false
-    private(set) var isWorkoutActive = false
     private(set) var lastErrorDescription: String?
 
     // MARK: - Private Properties
 
     private let healthStore = HKHealthStore()
-    private var workoutSession: HKWorkoutSession?
-    private var workoutBuilder: HKLiveWorkoutBuilder?
-    private var workoutStartDate: Date?
-    private var lastSampleDate: Date?
-    private var lastSyncedData = TreadmillData()
 
     // MARK: - Initialization
 
@@ -164,188 +158,7 @@ class HealthKitManager {
         await notifyWorkoutCompleted(stats: stats)
     }
 
-    // MARK: - Live Workout Session (Optional - for real-time tracking)
-
-    /// Start a live workout session
-    func startWorkout() async throws {
-        guard !isWorkoutActive else {
-            print("⚠️ Workout already in progress")
-            return
-        }
-
-        guard isAuthorized else {
-            throw HealthKitError.notAuthorized
-        }
-
-        print("\n🏃 Starting live workout session...")
-
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .walking
-        configuration.locationType = .indoor
-
-        do {
-            let session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-            workoutSession = session
-
-            let builder = session.associatedWorkoutBuilder()
-            workoutBuilder = builder
-
-            builder.dataSource = HKLiveWorkoutDataSource(
-                healthStore: healthStore,
-                workoutConfiguration: configuration
-            )
-
-            let startDate = Date()
-            workoutStartDate = startDate
-
-            session.startActivity(with: startDate)
-            try await builder.beginCollection(at: startDate)
-
-            lastSyncedData = TreadmillData()
-            lastSampleDate = startDate
-            lastErrorDescription = nil
-
-            isWorkoutActive = true
-            print("✅ Live workout session started")
-        } catch {
-            lastErrorDescription = error.localizedDescription
-            print("❌ Failed to start workout: \(error.localizedDescription)")
-            throw error
-        }
-    }
-
-    /// Add treadmill data samples to live workout
-    func addWorkoutData(_ data: TreadmillData) async throws {
-        guard let builder = workoutBuilder,
-              let startDate = workoutStartDate,
-              isWorkoutActive else {
-            return
-        }
-
-        var samples: [HKQuantitySample] = []
-        let now = Date()
-        let sampleStart = lastSampleDate ?? startDate
-
-        // Add step count delta
-        if let stepDelta = delta(current: data.steps, previous: lastSyncedData.steps),
-           stepDelta > 0 {
-            let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount)!
-            let stepQuantity = HKQuantity(unit: .count(), doubleValue: Double(stepDelta))
-            let stepSample = HKQuantitySample(
-                type: stepType,
-                quantity: stepQuantity,
-                start: sampleStart,
-                end: now
-            )
-            samples.append(stepSample)
-        }
-
-        // Add distance delta (convert miles to meters)
-        if let distanceDelta = delta(current: data.distance, previous: lastSyncedData.distance),
-           distanceDelta > 0 {
-            let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning)!
-            let meters = distanceDelta * 1609.34
-            let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: meters)
-            let distanceSample = HKQuantitySample(
-                type: distanceType,
-                quantity: distanceQuantity,
-                start: sampleStart,
-                end: now
-            )
-            samples.append(distanceSample)
-        }
-
-        // Add calories delta
-        if let calorieDelta = delta(current: data.calories, previous: lastSyncedData.calories),
-           calorieDelta > 0 {
-            let calorieType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)!
-            let calorieQuantity = HKQuantity(
-                unit: .kilocalorie(),
-                doubleValue: Double(calorieDelta)
-            )
-            let calorieSample = HKQuantitySample(
-                type: calorieType,
-                quantity: calorieQuantity,
-                start: sampleStart,
-                end: now
-            )
-            samples.append(calorieSample)
-        }
-
-        if !samples.isEmpty {
-            try await builder.addSamples(samples)
-            lastSampleDate = now
-            print("  ✅ Added \(samples.count) samples to live workout")
-        }
-
-        lastSyncedData = data
-        lastErrorDescription = nil
-    }
-
-    /// End live workout session
-    func endWorkout() async throws {
-        guard let session = workoutSession,
-              let builder = workoutBuilder,
-              isWorkoutActive else {
-            return
-        }
-
-        print("\n⏹️ Ending live workout session...")
-
-        let endDate = Date()
-
-        do {
-            session.end()
-            try await builder.endCollection(at: endDate)
-            let workout = try await builder.finishWorkout()
-
-            print("✅ Live workout saved to HealthKit")
-            lastErrorDescription = nil
-
-            if let startDate = workoutStartDate, let workout = workout {
-                let duration = endDate.timeIntervalSince(startDate)
-                let hours = Int(duration) / 3600
-                let minutes = (Int(duration) % 3600) / 60
-                let seconds = Int(duration) % 60
-
-                let durationString: String
-                if hours > 0 {
-                    durationString = String(format: "%d:%02d:%02d", hours, minutes, seconds)
-                } else {
-                    durationString = String(format: "%d:%02d", minutes, seconds)
-                }
-
-                let stats = await extractWorkoutStats(from: workout, duration: durationString)
-                await notifyWorkoutCompleted(stats: stats)
-            }
-        } catch {
-            lastErrorDescription = error.localizedDescription
-            print("❌ Failed to finish workout: \(error.localizedDescription)")
-            throw error
-        }
-
-        workoutSession = nil
-        workoutBuilder = nil
-        workoutStartDate = nil
-        lastSampleDate = nil
-        lastSyncedData = TreadmillData()
-        isWorkoutActive = false
-    }
-
     // MARK: - Private Helpers
-
-    private func extractWorkoutStats(from workout: HKWorkout, duration: String) async -> WorkoutStats {
-        let steps = workout.statistics(for: HKQuantityType(.stepCount))?.sumQuantity()?.doubleValue(for: .count()) ?? 0
-        let distance = workout.statistics(for: HKQuantityType(.distanceWalkingRunning))?.sumQuantity()?.doubleValue(for: .mile()) ?? 0
-        let calories = workout.statistics(for: HKQuantityType(.activeEnergyBurned))?.sumQuantity()?.doubleValue(for: .kilocalorie()) ?? 0
-
-        return WorkoutStats(
-            duration: duration,
-            steps: Int(steps),
-            distance: distance,
-            calories: Int(calories)
-        )
-    }
 
     private func notifyWorkoutCompleted(stats: WorkoutStats) async {
         NotificationCenter.default.post(
@@ -400,13 +213,6 @@ class HealthKitManager {
         }
 
         print("✅ Session validation passed")
-    }
-
-    private func delta<T: Numeric & Comparable>(current: T?, previous: T?) -> T? {
-        guard let current else { return nil }
-        guard let previous else { return current }
-        let change = current - previous
-        return change < 0 ? current : change  // Handle resets
     }
 }
 
