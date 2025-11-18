@@ -43,7 +43,7 @@ struct OnboardingView: View {
                     VStack(spacing: 24) {
                         OnboardingFeature(
                             icon: "server.rack",
-                            title: "Raspberry Pi Server",
+                            title: "Always-On Server",
                             description: "Runs 24/7 collecting treadmill data via Bluetooth"
                         )
                         OnboardingFeature(
@@ -52,9 +52,9 @@ struct OnboardingView: View {
                             description: "Pulls workouts and syncs to Apple Health"
                         )
                         OnboardingFeature(
-                            icon: "heart.fill",
+                            icon: "chart.line.uptrend.xyaxis",
                             title: "Complete Data",
-                            description: "Heart rate, distance, calories, and more"
+                            description: "Duration, distance, speed, incline, calories (HR if supported)"
                         )
                     }
                     .padding(.horizontal)
@@ -71,7 +71,7 @@ struct OnboardingView: View {
                     Text("Connect to Server")
                         .font(.largeTitle)
                         .fontWeight(.bold)
-                    Text("Configure your Raspberry Pi server address to get started")
+                    Text("Configure your server address to get started")
                         .font(.body)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)

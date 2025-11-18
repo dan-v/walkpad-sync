@@ -19,7 +19,7 @@ struct WorkoutListView: View {
                             Text("Server Not Connected")
                                 .font(.subheadline)
                                 .fontWeight(.semibold)
-                            Text("Tap to configure your Raspberry Pi server")
+                            Text("Tap to configure your sync server")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
