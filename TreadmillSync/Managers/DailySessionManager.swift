@@ -90,12 +90,19 @@ final class DailySessionManager {
     }
 
     private init() {
-        if let decoded = Self.loadState(forKey: storageKey) {
+        if let decoded = Self.loadState(forKey: storageKey),
+           calendar.isDateInToday(decoded.session.startDate) {
+            // Valid session from today
             currentSession = decoded.session
             lastTreadmillData = decoded.lastSample
+            print("📂 Restored today's session: \(decoded.session.totalSteps) steps")
         } else {
+            // No saved state or session is from a previous day
             currentSession = DailySession.newSession()
             lastTreadmillData = nil
+            if let decoded = Self.loadState(forKey: storageKey) {
+                print("⚠️ Discarded stale session from \(decoded.session.startDate)")
+            }
         }
     }
 
@@ -217,7 +224,14 @@ final class DailySessionManager {
         guard let current else { return nil }
         guard let previous else { return current }
         let change = current - previous
-        return change >= 0 ? change : current // Handle treadmill resets
+
+        // If change is negative, the treadmill likely reset - don't add anything
+        if change < 0 {
+            print("⚠️ Treadmill counter reset detected (previous: \(previous), current: \(current))")
+            return 0
+        }
+
+        return change
     }
 }
 

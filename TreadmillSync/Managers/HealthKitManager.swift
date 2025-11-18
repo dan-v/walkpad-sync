@@ -90,6 +90,9 @@ class HealthKitManager {
             throw HealthKitError.custom("No treadmill data to save yet")
         }
 
+        // Validate session data before saving
+        try validateSession(session)
+
         print("\n💾 Saving daily workout to HealthKit...")
         print("  📊 Steps: \(session.totalSteps)")
         print("  📏 Distance: \(String(format: "%.2f", session.totalDistanceMiles)) mi")
@@ -364,6 +367,54 @@ class HealthKitManager {
             name: .workoutCompleted,
             object: stats
         )
+    }
+
+    private func validateSession(_ session: DailySession) throws {
+        // Validate workout duration is reasonable (< 24 hours)
+        guard let endDate = session.lastUpdated else {
+            throw HealthKitError.custom("Invalid session - no end time")
+        }
+
+        let duration = endDate.timeIntervalSince(session.startDate)
+        guard duration > 0 && duration < 86400 else { // 24 hours
+            throw HealthKitError.custom("Invalid workout duration")
+        }
+
+        // Validate data values are reasonable
+        let maxStepsPerHour: Double = 10000
+        let hoursElapsed = duration / 3600.0
+        let maxExpectedSteps = Int(maxStepsPerHour * hoursElapsed * 2) // 2x buffer
+
+        guard session.totalSteps <= maxExpectedSteps else {
+            throw HealthKitError.custom("Step count seems unreasonably high - please check data")
+        }
+
+        guard session.totalDistanceMiles <= 100 else { // 100 miles in one day is unreasonable for walking
+            throw HealthKitError.custom("Distance seems unreasonably high - please check data")
+        }
+
+        guard session.totalCalories <= 10000 else { // 10k calories in one workout is unreasonable
+            throw HealthKitError.custom("Calorie count seems unreasonably high - please check data")
+        }
+
+        // Validate segment times
+        for (index, segment) in session.activitySegments.enumerated() {
+            guard segment.endTime > segment.startTime else {
+                throw HealthKitError.custom("Invalid segment #\(index + 1) - end time before start time")
+            }
+
+            let segmentDuration = segment.endTime.timeIntervalSince(segment.startTime)
+            guard segmentDuration < 43200 else { // 12 hours
+                throw HealthKitError.custom("Segment #\(index + 1) duration is unreasonably long")
+            }
+
+            // Ensure segment is within workout bounds
+            guard segment.startTime >= session.startDate && segment.endTime <= endDate else {
+                throw HealthKitError.custom("Segment #\(index + 1) is outside workout time range")
+            }
+        }
+
+        print("✅ Session validation passed")
     }
 
     private func delta<T: Numeric & Comparable>(current: T?, previous: T?) -> T? {

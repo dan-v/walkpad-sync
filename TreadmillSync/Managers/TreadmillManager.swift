@@ -12,6 +12,7 @@ import Observation
 /// Connection state for BLE treadmill
 enum ConnectionState: Equatable {
     case disconnected
+    case disconnectedBLEOff  // Treadmill BLE turned off (walkaway detection)
     case scanning
     case connecting
     case connected
@@ -20,6 +21,7 @@ enum ConnectionState: Equatable {
     var description: String {
         switch self {
         case .disconnected: return "Disconnected"
+        case .disconnectedBLEOff: return "Treadmill BLE Off"
         case .scanning: return "Scanning..."
         case .connecting: return "Connecting..."
         case .connected: return "Connected"
@@ -29,6 +31,11 @@ enum ConnectionState: Equatable {
 
     var isConnected: Bool {
         if case .connected = self { return true }
+        return false
+    }
+
+    var needsManualReconnect: Bool {
+        if case .disconnectedBLEOff = self { return true }
         return false
     }
 }
@@ -74,7 +81,15 @@ class TreadmillManager: NSObject {
     private var peripheral: CBPeripheral?
     private var targetCharacteristic: CBCharacteristic?
     private var pollTask: Task<Void, Never>?
+    private var scanTimeoutTask: Task<Void, Never>?
+    private var connectionTimeoutTask: Task<Void, Never>?
+    private var reconnectionTask: Task<Void, Never>?
     private var pendingQueries: [TreadmillQuery] = []
+
+    // Reconnection state
+    private var reconnectionAttempts = 0
+    private let maxReconnectionAttempts = 5
+    private var lastDisconnectWasTimeout = false
 
     // Enhanced parser with validation
     private let parser = BLEDataParser(enableDebugLogging: true)
@@ -166,6 +181,19 @@ class TreadmillManager: NSObject {
             CBCentralManagerScanOptionAllowDuplicatesKey: false
         ]
         centralManager.scanForPeripherals(withServices: [serviceUUID], options: options)
+
+        // Start timeout task
+        scanTimeoutTask?.cancel()
+        scanTimeoutTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(30))
+            guard let self = self, !Task.isCancelled else { return }
+
+            if case .scanning = self.connectionState {
+                print("⏱️ Scanning timeout - no treadmill found")
+                self.centralManager.stopScan()
+                self.connectionState = .error("No treadmill found. Make sure it's powered on.")
+            }
+        }
     }
 
     /// Forget the saved treadmill
@@ -179,7 +207,30 @@ class TreadmillManager: NSObject {
         targetCharacteristic = nil
         pendingQueries.removeAll()
         parser.reset()
+        scanTimeoutTask?.cancel()
+        scanTimeoutTask = nil
+        connectionTimeoutTask?.cancel()
+        connectionTimeoutTask = nil
+        reconnectionTask?.cancel()
+        reconnectionTask = nil
+        reconnectionAttempts = 0
+        lastDisconnectWasTimeout = false
         connectionState = .disconnected
+    }
+
+    /// Manually retry connection (for when BLE is turned off)
+    func retryConnection() async {
+        print("🔄 Manual reconnection requested")
+        reconnectionAttempts = 0
+        lastDisconnectWasTimeout = false
+        reconnectionTask?.cancel()
+        reconnectionTask = nil
+
+        if case .disconnectedBLEOff = connectionState {
+            connectionState = .disconnected
+        }
+
+        await startScanning()
     }
 
     // MARK: - Private Methods
@@ -198,12 +249,39 @@ class TreadmillManager: NSObject {
         do {
             print("🔌 Connecting to \(peripheral.name ?? "Unknown")...")
             centralManager.connect(peripheral, options: nil)
+
+            // Start connection timeout
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(10))
+                guard let self = self, !Task.isCancelled else { return }
+
+                if case .connecting = self.connectionState {
+                    print("⏱️ Connection timeout")
+                    self.centralManager.cancelPeripheralConnection(peripheral)
+                    let timeoutError = NSError(domain: "TreadmillSync", code: -1,
+                                             userInfo: [NSLocalizedDescriptionKey: "Connection timeout"])
+                    self.connectionContinuation?.resume(throwing: timeoutError)
+                    self.connectionContinuation = nil
+                }
+            }
+
             try await withCheckedThrowingContinuation { continuation in
                 connectionContinuation = continuation
             }
+
+            // Cancel timeout on success
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
+
+            // Reset reconnection attempts on successful connection
+            reconnectionAttempts = 0
+
             print("✅ Connected to treadmill")
             await discoverServices()
         } catch {
+            connectionTimeoutTask?.cancel()
+            connectionTimeoutTask = nil
             connectionState = .error("Connection failed: \(error.localizedDescription)")
             print("❌ Connection failed: \(error.localizedDescription)")
         }
@@ -377,6 +455,8 @@ extension TreadmillManager: CBCentralManagerDelegate {
 
             // Stop scanning once we find the treadmill
             central.stopScan()
+            scanTimeoutTask?.cancel()
+            scanTimeoutTask = nil
 
             if isLikelyTreadmill(name: peripheral.name) ||
                 isLikelyTreadmill(name: advertisementData[CBAdvertisementDataLocalNameKey] as? String) {
@@ -408,7 +488,7 @@ extension TreadmillManager: CBCentralManagerDelegate {
                                    didDisconnectPeripheral peripheral: CBPeripheral,
                                    error: Error?) {
         Task { @MainActor in
-            print("❌ Disconnected from treadmill")
+            print("❌ Disconnected from treadmill\(error != nil ? " (error: \(error!.localizedDescription))" : "")")
 
             pollTask?.cancel()
             pollTask = nil
@@ -416,11 +496,37 @@ extension TreadmillManager: CBCentralManagerDelegate {
 
             connectionState = .disconnected
 
-            // Automatically attempt to reconnect
-            if let peripheral = self.peripheral {
-                central.connect(peripheral, options: nil)
-            } else {
-                await startScanning()
+            // Detect BLE-off state (likely walkaway)
+            // If we've had multiple failures, BLE is probably turned off on the treadmill
+            if reconnectionAttempts >= 3 {
+                print("⚠️ Likely BLE turned off on treadmill (walkaway detection)")
+                connectionState = .disconnectedBLEOff
+                lastDisconnectWasTimeout = true
+                return
+            }
+
+            // Attempt to reconnect with exponential backoff
+            guard reconnectionAttempts < maxReconnectionAttempts else {
+                print("⚠️ Max reconnection attempts reached (\(maxReconnectionAttempts))")
+                connectionState = .error("Connection lost. Tap to reconnect.")
+                return
+            }
+
+            reconnectionAttempts += 1
+            let delay = min(pow(2.0, Double(reconnectionAttempts - 1)), 30.0) // Max 30 seconds
+            print("🔄 Will attempt reconnection \(reconnectionAttempts)/\(maxReconnectionAttempts) in \(Int(delay))s...")
+
+            reconnectionTask?.cancel()
+            reconnectionTask = Task { [weak self] in
+                try? await Task.sleep(for: .seconds(delay))
+                guard let self = self, !Task.isCancelled else { return }
+
+                if let peripheral = self.peripheral {
+                    print("🔄 Reconnecting (attempt \(self.reconnectionAttempts)/\(self.maxReconnectionAttempts))...")
+                    central.connect(peripheral, options: nil)
+                } else {
+                    await self.startScanning()
+                }
             }
         }
     }

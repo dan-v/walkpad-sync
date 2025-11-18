@@ -12,13 +12,19 @@ import UserNotifications
 struct TreadmillSyncApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @State private var coordinator = WorkoutCoordinator.shared
+    @State private var notificationObserver: NSObjectProtocol?
 
     var body: some Scene {
         WindowGroup {
             MainView()
                 .onAppear {
-                    setupNotifications()
+                    if notificationObserver == nil {
+                        setupNotifications()
+                    }
                     requestHealthAuthorization()
+                }
+                .onDisappear {
+                    cleanupNotifications()
                 }
         }
     }
@@ -32,8 +38,8 @@ struct TreadmillSyncApp: App {
             }
         }
 
-        // Listen for workout completion
-        NotificationCenter.default.addObserver(
+        // Listen for workout completion and store observer
+        notificationObserver = NotificationCenter.default.addObserver(
             forName: .workoutCompleted,
             object: nil,
             queue: .main
@@ -41,6 +47,15 @@ struct TreadmillSyncApp: App {
             if let stats = notification.object as? WorkoutStats {
                 sendWorkoutCompletedNotification(stats: stats)
             }
+        }
+        print("✅ Notification observer registered")
+    }
+
+    private func cleanupNotifications() {
+        if let observer = notificationObserver {
+            NotificationCenter.default.removeObserver(observer)
+            notificationObserver = nil
+            print("✅ Notification observer removed")
         }
     }
 

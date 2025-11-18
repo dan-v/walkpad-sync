@@ -35,7 +35,8 @@ struct MainView: View {
                         // Connection Status Card
                         ConnectionStatusCard(
                             state: coordinator.treadmillManager.connectionState,
-                            isCollecting: coordinator.isAutoCollecting
+                            isCollecting: coordinator.isAutoCollecting,
+                            onRetry: retryConnection
                         )
 
                         // Today's Session Card
@@ -158,13 +159,35 @@ struct MainView: View {
 
         Task { @MainActor in
             do {
-                try await coordinator.saveWorkout()
+                // Add 30-second timeout for save operation
+                try await withThrowingTaskGroup(of: Void.self) { group in
+                    group.addTask {
+                        try await coordinator.saveWorkout()
+                    }
+
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(30))
+                        throw NSError(domain: "TreadmillSync", code: -1,
+                                    userInfo: [NSLocalizedDescriptionKey: "Save timeout - please try again"])
+                    }
+
+                    // Wait for first task to complete (either save or timeout)
+                    try await group.next()
+                    group.cancelAll()
+                }
+
                 showReviewSheet = false
                 alertMessage = "Workout saved to Apple Health! 🎉"
             } catch {
                 alertMessage = error.localizedDescription
             }
             isSavingWorkout = false
+        }
+    }
+
+    private func retryConnection() {
+        Task {
+            await coordinator.treadmillManager.retryConnection()
         }
     }
 }
@@ -174,39 +197,58 @@ struct MainView: View {
 struct ConnectionStatusCard: View {
     let state: ConnectionState
     let isCollecting: Bool
+    var onRetry: (() -> Void)? = nil
 
     var body: some View {
-        HStack(spacing: 16) {
-            // Icon
-            Image(systemName: iconName)
-                .font(.system(size: 40))
-                .foregroundStyle(iconColor)
-                .symbolEffect(.pulse, isActive: isAnimating)
-                .frame(width: 60)
+        VStack(spacing: 12) {
+            HStack(spacing: 16) {
+                // Icon
+                Image(systemName: iconName)
+                    .font(.system(size: 40))
+                    .foregroundStyle(iconColor)
+                    .symbolEffect(.pulse, isActive: isAnimating)
+                    .frame(width: 60)
 
-            // Status Info
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Treadmill")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                // Status Info
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Treadmill")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
 
-                Text(state.description)
-                    .font(.headline)
-                    .foregroundStyle(statusColor)
+                    Text(state.description)
+                        .font(.headline)
+                        .foregroundStyle(statusColor)
 
-                if isCollecting {
-                    HStack(spacing: 4) {
-                        Circle()
-                            .fill(.green)
-                            .frame(width: 8, height: 8)
-                        Text("Auto-collecting data")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                    if isCollecting {
+                        HStack(spacing: 4) {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 8, height: 8)
+                            Text("Auto-collecting data")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
+
+                Spacer()
             }
 
-            Spacer()
+            // Show retry button for BLE-off state
+            if state.needsManualReconnect, let onRetry = onRetry {
+                Button(action: onRetry) {
+                    HStack {
+                        Image(systemName: "arrow.clockwise")
+                        Text("Press Bluetooth button on treadmill, then tap here to reconnect")
+                    }
+                    .font(.footnote)
+                    .foregroundStyle(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.blue)
+                    .cornerRadius(12)
+                }
+            }
         }
         .padding()
         .background(
@@ -222,6 +264,7 @@ struct ConnectionStatusCard: View {
         case .connecting: return "antenna.radiowaves.left.and.right"
         case .scanning: return "magnifyingglass"
         case .disconnected: return "figure.walk.slash"
+        case .disconnectedBLEOff: return "bluetooth.slash"
         case .error: return "exclamationmark.triangle.fill"
         }
     }
@@ -231,6 +274,7 @@ struct ConnectionStatusCard: View {
         case .connected: return .green
         case .connecting, .scanning: return .blue
         case .disconnected: return .secondary
+        case .disconnectedBLEOff: return .orange
         case .error: return .red
         }
     }
@@ -240,6 +284,7 @@ struct ConnectionStatusCard: View {
         case .connected: return .green
         case .connecting, .scanning: return .blue
         case .disconnected: return .primary
+        case .disconnectedBLEOff: return .orange
         case .error: return .red
         }
     }
