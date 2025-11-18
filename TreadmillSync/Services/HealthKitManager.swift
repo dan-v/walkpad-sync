@@ -115,7 +115,9 @@ class HealthKitManager: ObservableObject {
         try await builder.endCollection(at: endDate)
 
         // Finish the workout and get the result
-        let finishedWorkout = try await builder.finishWorkout()
+        guard let finishedWorkout = try await builder.finishWorkout() else {
+            throw HealthKitError.invalidData
+        }
 
         return finishedWorkout.uuid
     }

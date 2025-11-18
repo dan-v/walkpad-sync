@@ -52,8 +52,8 @@ struct TreadmillSyncApp: App {
         // Schedule next background refresh
         scheduleBackgroundRefresh()
 
-        let syncTask = Task { [weak self] in
-            await self?.syncManager.performBackgroundSync()
+        let syncTask = Task {
+            await syncManager.performBackgroundSync()
         }
 
         task.expirationHandler = {
