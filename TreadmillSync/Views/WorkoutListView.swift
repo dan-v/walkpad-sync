@@ -42,7 +42,9 @@ struct WorkoutListView: View {
             // Live Workout Banner
             if let liveWorkout = liveWorkout {
                 LiveWorkoutBanner(liveData: liveWorkout)
-                    .padding()
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
             }
 
             // Status Header
@@ -109,22 +111,29 @@ struct WorkoutListView: View {
 
             // Workout List
             if syncManager.workouts.isEmpty {
-                VStack(spacing: 16) {
-                    Image(systemName: "figure.walk")
-                        .font(.system(size: 60))
-                        .foregroundColor(.secondary)
-                    Text("No Workouts")
-                        .font(.title2)
-                        .fontWeight(.semibold)
-                    Text(syncManager.isConnected
-                         ? "Your workouts will appear here"
-                         : "Connect to your server in settings")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .multilineTextAlignment(.center)
+                ScrollView {
+                    VStack(spacing: 16) {
+                        Image(systemName: "figure.walk")
+                            .font(.system(size: 60))
+                            .foregroundColor(.secondary)
+                        Text("No Workouts")
+                            .font(.title2)
+                            .fontWeight(.semibold)
+                        Text(syncManager.isConnected
+                             ? "Your workouts will appear here"
+                             : "Connect to your server in settings")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: 400)
+                    .padding()
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
+                .refreshable {
+                    await syncManager.checkConnection()
+                    await syncManager.loadWorkouts()
+                }
             } else {
                 List {
                     ForEach(groupedWorkouts.keys.sorted().reversed(), id: \.self) { date in
@@ -158,7 +167,8 @@ struct WorkoutListView: View {
                 }
                 .listStyle(.insetGrouped)
                 .refreshable {
-                    await syncManager.performSync()
+                    await syncManager.checkConnection()
+                    await syncManager.loadWorkouts()
                 }
             }
         }

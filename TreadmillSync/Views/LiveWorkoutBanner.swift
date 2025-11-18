@@ -12,44 +12,63 @@ struct LiveWorkoutBanner: View {
                     isExpanded.toggle()
                 }
             } label: {
-                HStack {
+                HStack(spacing: 12) {
                     // Pulsing indicator
                     Circle()
                         .fill(Color.green)
-                        .frame(width: 12, height: 12)
+                        .frame(width: 10, height: 10)
                         .overlay(
                             Circle()
-                                .stroke(Color.green.opacity(0.3), lineWidth: 4)
-                                .scaleEffect(1.5)
+                                .stroke(Color.green.opacity(0.3), lineWidth: 3)
+                                .scaleEffect(1.4)
                         )
 
-                    Text("Workout in Progress")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Workout in Progress")
+                            .font(.subheadline)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.primary)
 
-                    Spacer()
+                        if let metrics = liveData.currentMetrics {
+                            HStack(spacing: 16) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "speedometer")
+                                        .font(.caption2)
+                                        .foregroundColor(.green)
+                                    Text("\(metrics.speedFormatted) mph")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
 
-                    if let metrics = liveData.currentMetrics {
-                        HStack(spacing: 12) {
-                            MetricBadge(
-                                icon: "speedometer",
-                                value: metrics.speedFormatted,
-                                unit: "mph"
-                            )
+                                HStack(spacing: 4) {
+                                    Image(systemName: "figure.walk")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                    Text("\(metrics.distanceFormatted) mi")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
 
-                            MetricBadge(
-                                icon: "figure.walk",
-                                value: metrics.distanceFormatted,
-                                unit: "mi"
-                            )
+                                HStack(spacing: 4) {
+                                    Image(systemName: "flame.fill")
+                                        .font(.caption2)
+                                        .foregroundColor(.orange)
+                                    Text("\(metrics.caloriesFormatted) cal")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                     }
+
+                    Spacer()
 
                     Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                .padding()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
                 .background(Color.green.opacity(0.1))
             }
             .buttonStyle(.plain)

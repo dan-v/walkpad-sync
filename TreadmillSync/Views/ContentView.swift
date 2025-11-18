@@ -9,12 +9,14 @@ struct ContentView: View {
         NavigationStack {
             WorkoutListView()
                 .navigationTitle("Treadmill Sync")
+                .navigationBarTitleDisplayMode(.large)
                 .toolbar {
                     ToolbarItem(placement: .navigationBarTrailing) {
                         Button {
                             showingSettings = true
                         } label: {
                             Image(systemName: "gearshape")
+                                .imageScale(.large)
                         }
                     }
                 }
