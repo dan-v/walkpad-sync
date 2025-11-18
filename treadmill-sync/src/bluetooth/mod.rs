@@ -397,9 +397,13 @@ impl BluetoothManager {
             if let Some(last_sample) = samples.last() {
                 // Calculate elapsed time from first to last sample
                 let elapsed_time = if let Some(first_sample) = samples.first() {
-                    let first = chrono::DateTime::parse_from_rfc3339(&first_sample.timestamp).ok()?;
-                    let last = chrono::DateTime::parse_from_rfc3339(&last_sample.timestamp).ok()?;
-                    Some((last - first).num_seconds() as u16)
+                    match (
+                        chrono::DateTime::parse_from_rfc3339(&first_sample.timestamp),
+                        chrono::DateTime::parse_from_rfc3339(&last_sample.timestamp)
+                    ) {
+                        (Ok(first), Ok(last)) => Some((last - first).num_seconds() as u16),
+                        _ => None,
+                    }
                 } else {
                     None
                 };
