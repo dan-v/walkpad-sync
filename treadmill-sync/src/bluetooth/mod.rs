@@ -150,6 +150,8 @@ impl BluetoothManager {
         let mut sample_count = 0;
         let mut zero_speed_count = 0;
         let zero_speed_threshold = self.config.workout_end_timeout_secs;
+        let mut last_distance: Option<u32> = None;
+        let mut last_calories: Option<u16> = None;
 
         while let Some(notification) = notification_stream.next().await {
             if notification.uuid != char.uuid {
@@ -161,6 +163,59 @@ impl BluetoothManager {
                     let current_speed = data.speed.unwrap_or(0.0);
                     debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, samples={}",
                            current_speed, data.incline.unwrap_or(0.0), data.distance, sample_count);
+
+                    // Detect treadmill reset (cumulative values decreased significantly)
+                    if workout_started {
+                        let mut reset_detected = false;
+
+                        if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
+                            // If distance decreased by more than 10 meters, consider it a reset
+                            if current_distance < prev_distance.saturating_sub(10) {
+                                warn!("Treadmill reset detected: distance dropped from {}m to {}m",
+                                      prev_distance, current_distance);
+                                reset_detected = true;
+                            }
+                        }
+
+                        if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
+                            // If calories decreased by more than 5, consider it a reset
+                            if current_calories < prev_calories.saturating_sub(5) {
+                                warn!("Treadmill reset detected: calories dropped from {} to {}",
+                                      prev_calories, current_calories);
+                                reset_detected = true;
+                            }
+                        }
+
+                        if reset_detected {
+                            info!("Ending current workout due to treadmill reset (samples: {})", sample_count);
+
+                            // End the current workout
+                            if let Err(e) = self.end_workout().await {
+                                error!("Failed to end workout after reset: {}", e);
+                            }
+
+                            // Reset state
+                            workout_started = false;
+                            sample_count = 0;
+                            zero_speed_count = 0;
+                            last_distance = None;
+                            last_calories = None;
+
+                            // If treadmill is still moving, start a new workout immediately
+                            if current_speed > 0.1 {
+                                info!("Starting new workout after reset (speed: {:.2} m/s)", current_speed);
+                                if let Err(e) = self.start_workout().await {
+                                    error!("Failed to start workout after reset: {}", e);
+                                    continue;
+                                }
+                                workout_started = true;
+                            }
+                        }
+                    }
+
+                    // Track last cumulative values for reset detection
+                    last_distance = data.distance;
+                    last_calories = data.total_energy;
 
                     // Detect workout start (speed > 0)
                     if !workout_started && current_speed > 0.1 {
@@ -202,6 +257,8 @@ impl BluetoothManager {
                                     workout_started = false;
                                     sample_count = 0;
                                     zero_speed_count = 0;
+                                    last_distance = None;
+                                    last_calories = None;
                                 }
                             }
                         } else {
