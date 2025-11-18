@@ -133,6 +133,39 @@ actor APIClient {
             throw APIError.serverError
         }
     }
+
+    // MARK: - Live Workout
+
+    func fetchLiveWorkout() async throws -> LiveWorkoutResponse? {
+        guard let url = URL(string: "\(config.baseURL)/api/debug/live") else {
+            throw APIError.invalidURL
+        }
+
+        let (data, response) = try await session.data(from: url)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.serverError
+        }
+
+        // Return nil if no workout in progress (204 No Content or empty response)
+        if httpResponse.statusCode == 204 || data.isEmpty {
+            return nil
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.serverError
+        }
+
+        let decoder = JSONDecoder()
+        let result = try decoder.decode(LiveWorkoutResponse.self, from: data)
+
+        // Return nil if no workout in the response
+        if result.workout == nil {
+            return nil
+        }
+
+        return result
+    }
 }
 
 // MARK: - Errors

@@ -60,6 +60,19 @@ class SyncManager: ObservableObject {
         }
     }
 
+    // MARK: - Live Workout
+
+    func fetchLiveWorkout() async -> LiveWorkoutResponse? {
+        guard isConnected else { return nil }
+
+        do {
+            return try await apiClient.fetchLiveWorkout()
+        } catch {
+            // Silently fail for live workout polling
+            return nil
+        }
+    }
+
     // MARK: - Sync
 
     func syncIfNeeded() async {

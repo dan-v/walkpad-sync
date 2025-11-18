@@ -4,6 +4,8 @@ struct WorkoutListView: View {
     @EnvironmentObject var syncManager: SyncManager
 
     @State private var showingServerSetup = false
+    @State private var liveWorkout: LiveWorkoutResponse?
+    @State private var liveWorkoutTimer: Timer?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -35,6 +37,12 @@ struct WorkoutListView: View {
                 .sheet(isPresented: $showingServerSetup) {
                     SettingsView()
                 }
+            }
+
+            // Live Workout Banner
+            if let liveWorkout = liveWorkout {
+                LiveWorkoutBanner(liveData: liveWorkout)
+                    .padding()
             }
 
             // Status Header
@@ -167,6 +175,43 @@ struct WorkoutListView: View {
             }
         } message: {
             Text(syncManager.syncSuccessMessage ?? "")
+        }
+        .onAppear {
+            startLiveWorkoutPolling()
+        }
+        .onDisappear {
+            stopLiveWorkoutPolling()
+        }
+    }
+
+    // MARK: - Live Workout Polling
+
+    private func startLiveWorkoutPolling() {
+        // Fetch immediately
+        fetchLiveWorkout()
+
+        // Then poll every 2 seconds
+        liveWorkoutTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
+            fetchLiveWorkout()
+        }
+    }
+
+    private func stopLiveWorkoutPolling() {
+        liveWorkoutTimer?.invalidate()
+        liveWorkoutTimer = nil
+    }
+
+    private func fetchLiveWorkout() {
+        guard syncManager.isConnected else {
+            liveWorkout = nil
+            return
+        }
+
+        Task {
+            let data = await syncManager.fetchLiveWorkout()
+            await MainActor.run {
+                liveWorkout = data
+            }
         }
     }
 

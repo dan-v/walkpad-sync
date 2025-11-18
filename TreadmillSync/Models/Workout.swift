@@ -158,3 +158,50 @@ struct RegisterRequest: Codable {
         case deviceName = "device_name"
     }
 }
+
+// MARK: - Live Workout Data
+
+struct LiveWorkoutResponse: Codable {
+    let workout: Workout?
+    let currentMetrics: LiveWorkoutMetrics?
+    let recentSamples: [WorkoutSample]
+
+    enum CodingKeys: String, CodingKey {
+        case workout
+        case currentMetrics = "current_metrics"
+        case recentSamples = "recent_samples"
+    }
+}
+
+struct LiveWorkoutMetrics: Codable {
+    let currentSpeed: Double?
+    let currentIncline: Double?
+    let distanceSoFar: Int64?
+    let caloriesSoFar: Int64?
+    let heartRate: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case currentSpeed = "current_speed"
+        case currentIncline = "current_incline"
+        case distanceSoFar = "distance_so_far"
+        case caloriesSoFar = "calories_so_far"
+        case heartRate = "heart_rate"
+    }
+
+    var speedFormatted: String {
+        guard let speed = currentSpeed else { return "0.0" }
+        let mph = speed * 2.23694 // m/s to mph
+        return String(format: "%.1f", mph)
+    }
+
+    var distanceFormatted: String {
+        guard let meters = distanceSoFar else { return "0.00" }
+        let miles = Double(meters) / 1609.34
+        return String(format: "%.2f", miles)
+    }
+
+    var caloriesFormatted: String {
+        guard let cal = caloriesSoFar else { return "0" }
+        return "\(cal)"
+    }
+}
