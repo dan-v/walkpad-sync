@@ -93,6 +93,8 @@ class SyncManager: ObservableObject {
 
             // Sync each workout to HealthKit
             var successCount = 0
+            var failedWorkouts: [(Int64, Error)] = []
+
             for workout in pending {
                 do {
                     // Fetch samples
@@ -107,7 +109,25 @@ class SyncManager: ObservableObject {
                     successCount += 1
                 } catch {
                     print("Failed to sync workout \(workout.id): \(error)")
+                    failedWorkouts.append((workout.id, error))
                     // Continue with next workout even if one fails
+                }
+            }
+
+            // Report failures if any
+            if !failedWorkouts.isEmpty {
+                let failedIds = failedWorkouts.map { "\($0.0)" }.joined(separator: ", ")
+                print("⚠️ Failed to sync workouts: \(failedIds)")
+
+                // Show detailed error for first failure
+                if let firstError = failedWorkouts.first {
+                    syncError = NSError(
+                        domain: "SyncManager",
+                        code: -1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Failed to sync workout \(firstError.0): \(firstError.1.localizedDescription)"
+                        ]
+                    )
                 }
             }
 
