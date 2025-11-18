@@ -109,15 +109,15 @@ class HealthKitManager: ObservableObject {
         }
 
         // Add metadata
-        await builder.addMetadata([HKMetadataKeyIndoorWorkout: true])
+        try await builder.addMetadata([HKMetadataKeyIndoorWorkout: true])
 
         // End workout collection
         try await builder.endCollection(at: endDate)
 
         // Finish the workout and get the result
-        let workout = try await builder.finishWorkout()
+        let finishedWorkout = try await builder.finishWorkout()
 
-        return workout.uuid
+        return finishedWorkout.uuid
     }
 }
 
