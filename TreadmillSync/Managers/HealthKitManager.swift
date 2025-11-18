@@ -108,8 +108,8 @@ class HealthKitManager {
             device: .local()
         )
 
-        // Set metadata
-        await builder.setMetadata([
+        // Add metadata
+        await builder.addMetadata([
             HKMetadataKeyIndoorWorkout: true,
             "TreadmillModel": "LifeSpan TR1200B",
             "WorkoutType": "Desk Walking",
