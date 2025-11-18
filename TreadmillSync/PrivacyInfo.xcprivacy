@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC="-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- App Privacy Configuration -->
+
+	<!-- Tracking: We don't track users -->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<!-- Data Collection -->
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array>
+		<!-- Health and Fitness Data -->
+		<dict>
+			<key>NSPrivacyCollectedDataType</key>
+			<string>NSPrivacyCollectedDataTypeHealthAndFitness</string>
+
+			<key>NSPrivacyCollectedDataTypeLinked</key>
+			<false/>
+
+			<key>NSPrivacyCollectedDataTypeTracking</key>
+			<false/>
+
+			<key>NSPrivacyCollectedDataTypePurposes</key>
+			<array>
+				<string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+			</array>
+		</dict>
+	</array>
+
+	<!-- Tracking Domains: None -->
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<!-- API Types Accessed -->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<!-- UserDefaults (for storing peripheral UUID and session data) -->
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<!-- CA92.1: Access user defaults to store treadmill device UUID and session state -->
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
