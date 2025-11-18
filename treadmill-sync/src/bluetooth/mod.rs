@@ -2,19 +2,19 @@ pub mod ftms;
 
 use anyhow::{anyhow, Result};
 use btleplug::api::{
-    Central, CentralEvent, Characteristic, Manager as _, Peripheral as _, ScanFilter, WriteType,
+    Central, Characteristic, Manager as _, Peripheral as _, ScanFilter,
 };
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use chrono::Utc;
-use futures::stream::StreamExt;
+use futures_util::stream::StreamExt;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, mpsc, RwLock};
-use tokio::time::{sleep, interval};
+use tokio::sync::{broadcast, RwLock};
+use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
 use crate::storage::Storage;
-use ftms::{parse_treadmill_data, TreadmillData, FTMS_SERVICE_UUID, TREADMILL_DATA_UUID};
+use ftms::{parse_treadmill_data, TreadmillData, TREADMILL_DATA_UUID};
 
 #[derive(Debug, Clone)]
 pub enum ConnectionStatus {
