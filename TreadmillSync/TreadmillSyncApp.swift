@@ -16,7 +16,7 @@ struct TreadmillSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            MainView()
+            TabRootView()
                 .onAppear {
                     if notificationObserver == nil {
                         setupNotifications()
