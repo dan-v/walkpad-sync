@@ -8,10 +8,16 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::bluetooth::BluetoothManager;
 use crate::storage::{Storage, Workout, WorkoutSample};
+
+// Validation constants
+const MAX_DEVICE_ID_LENGTH: usize = 128;
+const MAX_DEVICE_NAME_LENGTH: usize = 256;
+const MAX_LIMIT: i64 = 100;
+const MAX_WORKOUT_ID: i64 = i64::MAX / 2; // Reasonable upper bound
 
 #[derive(Clone)]
 pub struct AppState {
@@ -27,6 +33,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/workouts/:id/samples", get(get_workout_samples))
         .route("/api/workouts/:id/confirm_sync", post(confirm_sync))
         .route("/api/workouts/live", get(get_live_workout))
+        .route("/api/debug/live", get(get_debug_live))
         .with_state(state)
 }
 
@@ -55,6 +62,12 @@ async fn register_sync_client(
     State(state): State<AppState>,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<RegisterResponse>, ApiError> {
+    // Validate inputs
+    validate_device_id(&req.device_id)?;
+    if let Some(ref name) = req.device_name {
+        validate_device_name(name)?;
+    }
+
     info!("Registering sync client: {} ({})", req.device_id, req.device_name.as_deref().unwrap_or("unnamed"));
 
     state.storage
@@ -128,6 +141,10 @@ async fn get_pending_workouts(
     State(state): State<AppState>,
     Query(query): Query<PendingWorkoutsQuery>,
 ) -> Result<Json<PendingWorkoutsResponse>, ApiError> {
+    // Validate inputs
+    validate_device_id(&query.device_id)?;
+    validate_limit(query.limit)?;
+
     info!("Getting pending workouts for device: {}", query.device_id);
 
     // Get or create sync client
@@ -190,6 +207,9 @@ async fn get_workout_samples(
     State(state): State<AppState>,
     axum::extract::Path(workout_id): axum::extract::Path<i64>,
 ) -> Result<Json<SamplesResponse>, ApiError> {
+    // Validate input
+    validate_workout_id(workout_id)?;
+
     info!("Getting samples for workout: {}", workout_id);
 
     let samples = state.storage.get_samples(workout_id).await?;
@@ -215,6 +235,10 @@ async fn confirm_sync(
     axum::extract::Path(workout_id): axum::extract::Path<i64>,
     Json(req): Json<ConfirmSyncRequest>,
 ) -> Result<Json<ConfirmSyncResponse>, ApiError> {
+    // Validate inputs
+    validate_workout_id(workout_id)?;
+    validate_device_id(&req.device_id)?;
+
     if let Some(ref hk_uuid) = req.healthkit_uuid {
         info!("Confirming sync for workout {} from device {} (HealthKit UUID: {})",
               workout_id, req.device_id, hk_uuid);
@@ -268,19 +292,186 @@ async fn get_live_workout(
     }))
 }
 
+// Debug endpoint - detailed live workout info
+#[derive(Debug, Serialize)]
+struct DebugLiveResponse {
+    workout: Option<WorkoutResponse>,
+    current_metrics: Option<CurrentMetrics>,
+    recent_samples: Vec<DebugSampleResponse>,
+    sample_count: usize,
+}
+
+#[derive(Debug, Serialize)]
+struct DebugSampleResponse {
+    timestamp: String,
+    speed: Option<f64>,
+    incline: Option<f64>,
+    distance: Option<i64>,
+    heart_rate: Option<i64>,
+    calories: Option<i64>,
+    cadence: Option<i64>,
+}
+
+impl From<WorkoutSample> for DebugSampleResponse {
+    fn from(s: WorkoutSample) -> Self {
+        Self {
+            timestamp: s.timestamp,
+            speed: s.speed,
+            incline: s.incline,
+            distance: s.distance,
+            heart_rate: s.heart_rate,
+            calories: s.calories,
+            cadence: s.cadence,
+        }
+    }
+}
+
+async fn get_debug_live(
+    State(state): State<AppState>,
+) -> Result<Json<DebugLiveResponse>, ApiError> {
+    let current_workout = state.storage.get_current_workout().await?;
+    let current_metrics = state.bluetooth.get_current_metrics().await?;
+
+    let (recent_samples, sample_count) = if let Some(ref workout) = current_workout {
+        let all_samples = state.storage.get_samples(workout.id).await?;
+        let count = all_samples.len();
+
+        // Get last 20 samples for debugging
+        let recent: Vec<DebugSampleResponse> = all_samples
+            .into_iter()
+            .rev()
+            .take(20)
+            .rev()
+            .map(DebugSampleResponse::from)
+            .collect();
+
+        (recent, count)
+    } else {
+        (vec![], 0)
+    };
+
+    let workout = current_workout.map(WorkoutResponse::from);
+    let metrics = current_metrics.map(|m| CurrentMetrics {
+        current_speed: m.speed,
+        current_incline: m.incline,
+        distance_so_far: m.distance,
+        calories_so_far: m.calories,
+        heart_rate: m.heart_rate,
+    });
+
+    Ok(Json(DebugLiveResponse {
+        workout,
+        current_metrics: metrics,
+        recent_samples,
+        sample_count,
+    }))
+}
+
+// Validation helpers
+fn validate_device_id(device_id: &str) -> Result<(), ValidationError> {
+    if device_id.is_empty() {
+        return Err(ValidationError::new("device_id cannot be empty"));
+    }
+
+    if device_id.len() > MAX_DEVICE_ID_LENGTH {
+        return Err(ValidationError::new(
+            format!("device_id too long (max {} characters)", MAX_DEVICE_ID_LENGTH)
+        ));
+    }
+
+    // Allow alphanumeric, hyphens, underscores, and dots (common for device IDs/UUIDs)
+    if !device_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
+        return Err(ValidationError::new("device_id contains invalid characters"));
+    }
+
+    Ok(())
+}
+
+fn validate_device_name(name: &str) -> Result<(), ValidationError> {
+    if name.len() > MAX_DEVICE_NAME_LENGTH {
+        return Err(ValidationError::new(
+            format!("device_name too long (max {} characters)", MAX_DEVICE_NAME_LENGTH)
+        ));
+    }
+    Ok(())
+}
+
+fn validate_limit(limit: i64) -> Result<(), ValidationError> {
+    if limit <= 0 {
+        return Err(ValidationError::new("limit must be positive"));
+    }
+
+    if limit > MAX_LIMIT {
+        return Err(ValidationError::new(
+            format!("limit too large (max {})", MAX_LIMIT)
+        ));
+    }
+
+    Ok(())
+}
+
+fn validate_workout_id(workout_id: i64) -> Result<(), ValidationError> {
+    if workout_id <= 0 {
+        return Err(ValidationError::new("workout_id must be positive"));
+    }
+
+    if workout_id > MAX_WORKOUT_ID {
+        return Err(ValidationError::new("workout_id out of valid range"));
+    }
+
+    Ok(())
+}
+
 // Error handling
-struct ApiError(anyhow::Error);
+#[derive(Debug)]
+struct ValidationError {
+    message: String,
+}
+
+impl ValidationError {
+    fn new<S: Into<String>>(message: S) -> Self {
+        Self {
+            message: message.into(),
+        }
+    }
+}
+
+#[derive(Debug)]
+enum ApiError {
+    Validation(ValidationError),
+    Internal(anyhow::Error),
+}
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> axum::response::Response {
-        error!("API error: {}", self.0);
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "error": self.0.to_string()
-            })),
-        )
-            .into_response()
+        match self {
+            ApiError::Validation(e) => {
+                warn!("Validation error: {}", e.message);
+                (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({
+                        "error": e.message
+                    })),
+                )
+                    .into_response()
+            }
+            ApiError::Internal(e) => {
+                error!("Internal server error: {}", e);
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({
+                        "error": "Internal server error"
+                    })),
+                )
+                    .into_response()
+            }
+        }
+    }
+}
+
+impl From<ValidationError> for ApiError {
+    fn from(err: ValidationError) -> Self {
+        ApiError::Validation(err)
     }
 }
 
@@ -289,6 +480,6 @@ where
     E: Into<anyhow::Error>,
 {
     fn from(err: E) -> Self {
-        Self(err.into())
+        ApiError::Internal(err.into())
     }
 }

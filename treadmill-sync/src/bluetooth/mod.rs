@@ -238,6 +238,12 @@ impl BluetoothManager {
     }
 
     async fn start_workout(&self) -> Result<()> {
+        // Check for and clean up any orphaned in-progress workouts
+        if let Some(existing) = self.storage.get_current_workout().await? {
+            warn!("Found existing in-progress workout {} (possible crash recovery). Marking as failed.", existing.id);
+            self.storage.mark_workout_failed(existing.id, "New workout started - possible service restart").await?;
+        }
+
         let workout_uuid = uuid::Uuid::new_v4().to_string();
         let start_time = Utc::now();
 
@@ -272,118 +278,101 @@ impl BluetoothManager {
     }
 
     async fn end_workout(&self) -> Result<()> {
-        let mut current = self.current_workout_id.write().await;
+        // Get workout ID and clear state immediately (minimize lock time)
+        let workout_id = {
+            let mut current = self.current_workout_id.write().await;
+            let id = *current;
+            *current = None; // Clear immediately to allow new workouts
+            id
+        };
 
-        if let Some(workout_id) = *current {
+        if let Some(workout_id) = workout_id {
             info!("Ending workout {}", workout_id);
 
-            // Get all samples to compute aggregates
-            let samples = self.storage.get_samples(workout_id).await?;
-
-            if samples.is_empty() {
-                warn!("No samples recorded for workout {}, discarding", workout_id);
-                *current = None;
-                return Ok(());
-            }
-
-            // Validate minimum workout requirements
-            const MIN_SAMPLES: usize = 10; // At least 10 seconds of data
-            if samples.len() < MIN_SAMPLES {
-                warn!("Workout {} too short: only {} samples, minimum is {}. Discarding.",
-                      workout_id, samples.len(), MIN_SAMPLES);
-                *current = None;
-                return Ok(());
-            }
-
-            // Compute aggregates
-            let mut total_distance = 0i64;
-            let mut total_calories = 0i64;
-            let mut max_speed = 0.0f64;
-            let mut max_incline = 0.0f64;
-            let mut speed_sum = 0.0f64;
-            let mut incline_sum = 0.0f64;
-            let mut speed_count = 0u32;
-            let mut incline_count = 0u32;
-            let mut heart_rates = Vec::new();
-
-            for sample in &samples {
-                if let Some(dist) = sample.distance {
-                    total_distance = total_distance.max(dist);
+            // Use database aggregation instead of loading all samples (memory efficient)
+            let agg = match self.storage.get_workout_aggregates(workout_id).await {
+                Ok(agg) => agg,
+                Err(e) => {
+                    error!("Failed to get workout aggregates: {}", e);
+                    self.storage.mark_workout_failed(workout_id, "Failed to compute aggregates").await?;
+                    return Ok(());
                 }
-                if let Some(cal) = sample.calories {
-                    total_calories = total_calories.max(cal);
-                }
-                if let Some(speed) = sample.speed {
-                    if speed > 0.0 {
-                        max_speed = max_speed.max(speed);
-                        speed_sum += speed;
-                        speed_count += 1;
-                    }
-                }
-                if let Some(incline) = sample.incline {
-                    max_incline = max_incline.max(incline);
-                    incline_sum += incline;
-                    incline_count += 1;
-                }
-                if let Some(hr) = sample.heart_rate {
-                    if hr > 0 {
-                        heart_rates.push(hr);
-                    }
-                }
-            }
-
-            let avg_speed = if speed_count > 0 { speed_sum / speed_count as f64 } else { 0.0 };
-            let avg_incline = if incline_count > 0 { incline_sum / incline_count as f64 } else { 0.0 };
-
-            let avg_heart_rate = if !heart_rates.is_empty() {
-                Some(heart_rates.iter().sum::<i64>() / heart_rates.len() as i64)
-            } else {
-                None
             };
 
-            let max_heart_rate = heart_rates.iter().max().copied();
+            // Validate minimum workout requirements
+            const MIN_SAMPLES: usize = 10;
+            if agg.sample_count == 0 {
+                warn!("No samples recorded for workout {}, deleting", workout_id);
+                self.storage.delete_workout(workout_id).await?;
+                return Ok(());
+            }
 
-            // Duration from first to last sample
-            let first_timestamp = chrono::DateTime::parse_from_rfc3339(&samples.first().unwrap().timestamp)?;
-            let last_timestamp = chrono::DateTime::parse_from_rfc3339(&samples.last().unwrap().timestamp)?;
-            let duration = (last_timestamp - first_timestamp).num_seconds();
+            if agg.sample_count < MIN_SAMPLES {
+                warn!("Workout {} too short: only {} samples (minimum {}). Deleting.",
+                      workout_id, agg.sample_count, MIN_SAMPLES);
+                self.storage.delete_workout(workout_id).await?;
+                return Ok(());
+            }
+
+            // Calculate duration from timestamps
+            let duration = if let (Some(first), Some(last)) = (&agg.first_timestamp, &agg.last_timestamp) {
+                match (
+                    chrono::DateTime::parse_from_rfc3339(first),
+                    chrono::DateTime::parse_from_rfc3339(last)
+                ) {
+                    (Ok(first_ts), Ok(last_ts)) => (last_ts - first_ts).num_seconds(),
+                    _ => {
+                        error!("Failed to parse timestamps for workout {}", workout_id);
+                        self.storage.mark_workout_failed(workout_id, "Invalid timestamps").await?;
+                        return Ok(());
+                    }
+                }
+            } else {
+                error!("Missing timestamps for workout {}", workout_id);
+                self.storage.mark_workout_failed(workout_id, "Missing timestamps").await?;
+                return Ok(());
+            };
 
             // Additional validation
             if duration < 10 {
-                warn!("Workout {} too short: only {} seconds. Discarding.", workout_id, duration);
-                *current = None;
+                warn!("Workout {} too short: only {} seconds. Deleting.", workout_id, duration);
+                self.storage.delete_workout(workout_id).await?;
                 return Ok(());
             }
 
             let end_time = Utc::now();
 
-            self.storage.complete_workout(
+            // Complete the workout
+            if let Err(e) = self.storage.complete_workout(
                 workout_id,
                 end_time,
                 duration,
-                total_distance,
-                avg_speed,
-                max_speed,
-                avg_incline,
-                max_incline,
-                total_calories,
-                avg_heart_rate,
-                max_heart_rate,
-            ).await?;
-
-            info!("✓ Workout {} completed successfully:", workout_id);
-            info!("  Duration: {}:{:02} ({} seconds)", duration / 60, duration % 60, duration);
-            info!("  Distance: {} meters ({:.2} km)", total_distance, total_distance as f64 / 1000.0);
-            info!("  Avg Speed: {:.2} m/s ({:.2} km/h)", avg_speed, avg_speed * 3.6);
-            info!("  Max Speed: {:.2} m/s ({:.2} km/h)", max_speed, max_speed * 3.6);
-            info!("  Avg Incline: {:.1}% (Max: {:.1}%)", avg_incline, max_incline);
-            info!("  Calories: {} kcal", total_calories);
-            if let Some(avg_hr) = avg_heart_rate {
-                info!("  Heart Rate: {} avg / {} max bpm", avg_hr, max_heart_rate.unwrap_or(0));
+                agg.total_distance,
+                agg.avg_speed,
+                agg.max_speed,
+                agg.avg_incline,
+                agg.max_incline,
+                agg.total_calories,
+                agg.avg_heart_rate,
+                agg.max_heart_rate,
+            ).await {
+                error!("Failed to complete workout {}: {}", workout_id, e);
+                self.storage.mark_workout_failed(workout_id, &format!("DB error: {}", e)).await?;
+                return Ok(());
             }
-            info!("  Samples: {}", samples.len());
 
-            *current = None;
+            // Log success
+            info!("Workout {} completed successfully:", workout_id);
+            info!("  Duration: {}:{:02} ({} seconds)", duration / 60, duration % 60, duration);
+            info!("  Distance: {} meters ({:.2} km)", agg.total_distance, agg.total_distance as f64 / 1000.0);
+            info!("  Avg Speed: {:.2} m/s ({:.2} km/h)", agg.avg_speed, agg.avg_speed * 3.6);
+            info!("  Max Speed: {:.2} m/s ({:.2} km/h)", agg.max_speed, agg.max_speed * 3.6);
+            info!("  Avg Incline: {:.1}% (Max: {:.1}%)", agg.avg_incline, agg.max_incline);
+            info!("  Calories: {} kcal", agg.total_calories);
+            if let Some(avg_hr) = agg.avg_heart_rate {
+                info!("  Heart Rate: {} avg / {} max bpm", avg_hr, agg.max_heart_rate.unwrap_or(0));
+            }
+            info!("  Samples: {}", agg.sample_count);
         }
 
         Ok(())

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use tracing::debug;
 use uuid::Uuid;
 
 // FTMS Service and Characteristic UUIDs
@@ -31,11 +32,15 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         return Err(anyhow!("Data too short"));
     }
 
+    // DEBUG: Log raw data bytes
+    debug!("FTMS RAW DATA ({} bytes): {:02X?}", data.len(), data);
+
     let mut result = TreadmillData::default();
     let mut offset = 0;
 
     // Parse flags (2 bytes, little-endian)
     let flags = u16::from_le_bytes([data[0], data[1]]);
+    debug!("FTMS FLAGS: 0x{:04X} (binary: {:016b})", flags, flags);
     offset += 2;
 
     // Bit 0: More Data
@@ -47,8 +52,9 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             return Err(anyhow!("Not enough data for average speed"));
         }
         let raw_speed = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        result.speed = Some(raw_speed as f64 / 100.0); // Convert from 0.01 km/h to m/s
-        result.speed = result.speed.map(|s| s / 3.6); // km/h to m/s
+        let speed_kmh = raw_speed as f64 / 100.0;
+        result.speed = Some(speed_kmh / 3.6); // km/h to m/s
+        debug!("FTMS SPEED: raw={} ({:.2} km/h = {:.2} m/s)", raw_speed, speed_kmh, result.speed.unwrap());
         offset += 2;
     }
 
@@ -60,6 +66,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let raw_distance = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], 0]);
         result.distance = Some(raw_distance); // already in meters
+        debug!("FTMS DISTANCE: {} meters", raw_distance);
         offset += 3;
     }
 
@@ -70,6 +77,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let raw_incline = i16::from_le_bytes([data[offset], data[offset + 1]]);
         result.incline = Some(raw_incline as f64 / 10.0); // 0.1% resolution
+        debug!("FTMS INCLINE: raw={} ({:.1}%)", raw_incline, result.incline.unwrap());
         offset += 4; // Skip ramp angle (2 bytes) + inclination (2 bytes)
     }
 
@@ -104,11 +112,13 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let total_energy = u16::from_le_bytes([data[offset], data[offset + 1]]);
         result.total_energy = Some(total_energy);
+        debug!("FTMS ENERGY: {} kcal", total_energy);
         offset += 2;
 
         if data.len() >= offset + 2 {
             let energy_per_hour = u16::from_le_bytes([data[offset], data[offset + 1]]);
             result.energy_per_hour = Some(energy_per_hour);
+            debug!("FTMS ENERGY/HR: {} kcal/h", energy_per_hour);
             offset += 2;
         }
 
@@ -123,6 +133,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             return Err(anyhow!("Not enough data for heart rate"));
         }
         result.heart_rate = Some(data[offset]);
+        debug!("FTMS HEART RATE: {} bpm", data[offset]);
         offset += 1;
     }
 
@@ -141,6 +152,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let elapsed = u16::from_le_bytes([data[offset], data[offset + 1]]);
         result.elapsed_time = Some(elapsed);
+        debug!("FTMS ELAPSED TIME: {} seconds", elapsed);
         offset += 2;
     }
 
@@ -151,6 +163,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let remaining = u16::from_le_bytes([data[offset], data[offset + 1]]);
         result.remaining_time = Some(remaining);
+        debug!("FTMS REMAINING TIME: {} seconds", remaining);
         offset += 2;
     }
 
@@ -161,13 +174,52 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         }
         let force = i16::from_le_bytes([data[offset], data[offset + 1]]);
         result.force_on_belt = Some(force);
+        debug!("FTMS FORCE ON BELT: {} N", force);
         offset += 2;
 
         if data.len() >= offset + 2 {
             let power = i16::from_le_bytes([data[offset], data[offset + 1]]);
             result.power_output = Some(power);
+            debug!("FTMS POWER OUTPUT: {} W", power);
         }
     }
+
+    // Validate parsed data for sanity
+    if let Some(speed) = result.speed {
+        if speed < 0.0 || speed > 50.0 {  // 50 m/s = 180 km/h (impossible for treadmill)
+            return Err(anyhow!("Invalid speed: {} m/s", speed));
+        }
+    }
+
+    if let Some(incline) = result.incline {
+        if incline < -15.0 || incline > 40.0 {  // Reasonable treadmill limits
+            return Err(anyhow!("Invalid incline: {}%", incline));
+        }
+    }
+
+    if let Some(hr) = result.heart_rate {
+        if hr == 0 || hr > 220 {  // Invalid heart rate
+            result.heart_rate = None;  // Discard invalid HR
+        }
+    }
+
+    if let Some(distance) = result.distance {
+        if distance > 1_000_000 {  // 1000 km seems like a reasonable max
+            return Err(anyhow!("Invalid distance: {} meters", distance));
+        }
+    }
+
+    // DEBUG: Summary of all parsed values
+    debug!(
+        "FTMS PARSED SUMMARY: speed={:?} m/s, incline={:?}%, distance={:?}m, calories={:?}kcal, hr={:?}bpm, elapsed={:?}s, power={:?}W",
+        result.speed,
+        result.incline,
+        result.distance,
+        result.total_energy,
+        result.heart_rate,
+        result.elapsed_time,
+        result.power_output
+    );
 
     Ok(result)
 }
