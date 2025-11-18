@@ -4,27 +4,27 @@ import BackgroundTasks
 @main
 struct TreadmillSyncApp: App {
     @StateObject private var syncManager = SyncManager()
-
-    init() {
-        // Register for background refresh
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: "com.treadmillsync.refresh",
-            using: nil
-        ) { task in
-            handleBackgroundRefresh(task: task as! BGAppRefreshTask)
-        }
-    }
+    @State private var hasRegisteredBackgroundTask = false
 
     var body: some Scene {
         WindowGroup {
             ContentView()
                 .environmentObject(syncManager)
                 .task {
+                    // Register background task once
+                    if !hasRegisteredBackgroundTask {
+                        registerBackgroundTask()
+                        hasRegisteredBackgroundTask = true
+                    }
+
                     // Request HealthKit permissions on launch
                     try? await HealthKitManager.shared.requestAuthorization()
 
                     // Sync on app launch
                     await syncManager.syncIfNeeded()
+
+                    // Schedule first background refresh
+                    scheduleBackgroundRefresh()
                 }
                 .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
                     // Sync when app comes to foreground
@@ -32,6 +32,15 @@ struct TreadmillSyncApp: App {
                         await syncManager.syncIfNeeded()
                     }
                 }
+        }
+    }
+
+    private func registerBackgroundTask() {
+        BGTaskScheduler.shared.register(
+            forTaskWithIdentifier: "com.treadmillsync.refresh",
+            using: nil
+        ) { task in
+            self.handleBackgroundRefresh(task: task as! BGAppRefreshTask)
         }
     }
 
