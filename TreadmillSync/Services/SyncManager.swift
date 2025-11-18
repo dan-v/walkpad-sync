@@ -20,8 +20,8 @@ class SyncManager: ObservableObject {
 
     init() {
         Task {
-            await loadWorkouts()
             await checkConnection()
+            await loadWorkouts()
         }
     }
 
