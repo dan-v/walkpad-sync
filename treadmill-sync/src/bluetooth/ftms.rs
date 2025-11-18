@@ -273,7 +273,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
 
 /// Parse LifeSpan proprietary protocol response
 pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<TreadmillData> {
-    if data.len() < 3 {
+    if data.len() < 4 {
         return Err(anyhow!("LifeSpan data too short: {} bytes", data.len()));
     }
 
@@ -285,11 +285,20 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         query, data
     );
 
+    // Response format:
+    // bytes[0] = 0xA1 (command echo)
+    // bytes[1] = 0xAA (status byte)
+    // bytes[2] = 0x00 (header)
+    // bytes[3+] = actual data
+
     match query {
         LifeSpanQuery::Speed => {
-            // Speed format: bytes[1] (integer mph) + bytes[2]/100 (decimal)
-            let integer_part = data[1] as f64;
-            let decimal_part = data[2] as f64 / 100.0;
+            // Speed format: bytes[3] (integer mph) + bytes[4]/100 (decimal)
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan speed data too short"));
+            }
+            let integer_part = data[3] as f64;
+            let decimal_part = data[4] as f64 / 100.0;
             let speed_mph = integer_part + decimal_part;
 
             // Convert mph to m/s (1 mph = 0.44704 m/s)
@@ -305,9 +314,12 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Distance => {
-            // Distance format: bytes[1] (integer miles) + bytes[2]/100 (decimal)
-            let integer_part = data[1] as f64;
-            let decimal_part = data[2] as f64 / 100.0;
+            // Distance format: bytes[3] (integer miles) + bytes[4]/100 (decimal)
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan distance data too short"));
+            }
+            let integer_part = data[3] as f64;
+            let decimal_part = data[4] as f64 / 100.0;
             let distance_miles = integer_part + decimal_part;
 
             // Convert miles to meters (1 mile = 1609.34 meters)
@@ -323,8 +335,11 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Calories => {
-            // Calories format: 16-bit little-endian in bytes[1] and bytes[2]
-            let calories = u16::from_le_bytes([data[1], data[2]]);
+            // Calories format: 16-bit little-endian in bytes[3] and bytes[4]
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan calories data too short"));
+            }
+            let calories = u16::from_le_bytes([data[3], data[4]]);
 
             // Validate: calories should be reasonable (0-5000)
             if calories <= 5000 {
@@ -336,8 +351,11 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Steps => {
-            // Steps format: 16-bit little-endian in bytes[1] and bytes[2]
-            let steps = u16::from_le_bytes([data[1], data[2]]);
+            // Steps format: 16-bit little-endian in bytes[3] and bytes[4]
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan steps data too short"));
+            }
+            let steps = u16::from_le_bytes([data[3], data[4]]);
 
             // Note: steps are not directly used in TreadmillData, but we log them
             debug!("LifeSpan steps: {}", steps);
@@ -348,11 +366,11 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Time => {
-            // Time format: bytes[1] (hours), bytes[2] (minutes), bytes[3] (seconds)
-            if data.len() >= 4 {
-                let hours = data[1] as u16;
-                let minutes = data[2] as u16;
-                let seconds = data[3] as u16;
+            // Time format: bytes[3] (hours), bytes[4] (minutes), bytes[5] (seconds)
+            if data.len() >= 6 {
+                let hours = data[3] as u16;
+                let minutes = data[4] as u16;
+                let seconds = data[5] as u16;
 
                 // Validate
                 if hours < 24 && minutes < 60 && seconds < 60 {
