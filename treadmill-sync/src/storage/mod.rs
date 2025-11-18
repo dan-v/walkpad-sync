@@ -2,8 +2,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqliteSynchronous},
-    FromRow, SqlitePool,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    FromRow, Row, SqlitePool,
 };
 use std::str::FromStr;
 use std::time::Duration;
@@ -65,8 +65,9 @@ impl Storage {
             .busy_timeout(Duration::from_secs(5)); // Wait up to 5s for locks
 
         // Create pool with limited connections (SQLite doesn't need many)
-        let pool = SqlitePool::connect_with(options)
+        let pool = SqlitePoolOptions::new()
             .max_connections(5)
+            .connect_with(options)
             .await?;
 
         // Run migrations (execute each statement separately for safety)
@@ -289,10 +290,10 @@ impl Storage {
 
     // Database aggregation for performance
     pub async fn get_workout_aggregates(&self, workout_id: i64) -> Result<WorkoutAggregates> {
-        let result = sqlx::query!(
+        let row = sqlx::query(
             r#"
             SELECT
-                COUNT(*) as "count!",
+                COUNT(*) as count,
                 MAX(distance) as max_distance,
                 MAX(calories) as max_calories,
                 AVG(CASE WHEN speed > 0 THEN speed END) as avg_speed,
@@ -305,24 +306,24 @@ impl Storage {
                 MAX(timestamp) as last_timestamp
             FROM workout_samples
             WHERE workout_id = ?
-            "#,
-            workout_id
+            "#
         )
+        .bind(workout_id)
         .fetch_one(&self.pool)
         .await?;
 
         Ok(WorkoutAggregates {
-            sample_count: result.count as usize,
-            total_distance: result.max_distance.unwrap_or(0),
-            total_calories: result.max_calories.unwrap_or(0),
-            avg_speed: result.avg_speed.unwrap_or(0.0),
-            max_speed: result.max_speed.unwrap_or(0.0),
-            avg_incline: result.avg_incline.unwrap_or(0.0),
-            max_incline: result.max_incline.unwrap_or(0.0),
-            avg_heart_rate: result.avg_hr.map(|hr| hr as i64),
-            max_heart_rate: result.max_hr,
-            first_timestamp: result.first_timestamp,
-            last_timestamp: result.last_timestamp,
+            sample_count: row.get::<i64, _>("count") as usize,
+            total_distance: row.get::<Option<i64>, _>("max_distance").unwrap_or(0),
+            total_calories: row.get::<Option<i64>, _>("max_calories").unwrap_or(0),
+            avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
+            max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
+            avg_incline: row.get::<Option<f64>, _>("avg_incline").unwrap_or(0.0),
+            max_incline: row.get::<Option<f64>, _>("max_incline").unwrap_or(0.0),
+            avg_heart_rate: row.get::<Option<i64>, _>("avg_hr"),
+            max_heart_rate: row.get::<Option<i64>, _>("max_hr"),
+            first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
+            last_timestamp: row.get::<Option<String>, _>("last_timestamp"),
         })
     }
 }
