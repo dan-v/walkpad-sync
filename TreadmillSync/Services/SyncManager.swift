@@ -104,6 +104,14 @@ class SyncManager: ObservableObject {
                     continue
                 }
 
+                // Skip workouts with no meaningful data (zero distance and zero calories)
+                // HealthKit rejects these as invalid
+                if (workout.totalDistance ?? 0) == 0 && (workout.totalCalories ?? 0) == 0 {
+                    print("⚠️ Skipping workout \(workout.id): no distance or calories recorded")
+                    skippedWorkouts.append(workout.id)
+                    continue
+                }
+
                 do {
                     // Fetch samples
                     let samples = try await apiClient.fetchWorkoutSamples(workoutId: workout.id)
