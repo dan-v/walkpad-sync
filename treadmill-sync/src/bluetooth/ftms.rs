@@ -293,13 +293,13 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 
     match query {
         LifeSpanQuery::Speed => {
-            // Speed format: bytes[3] is tenths of mph (not integer + decimal)
-            // Example: 0x28 (40 decimal) = 4.0 mph
+            // Speed format: bytes[3] is hundredths of mph
+            // Example: 0x28 (40 decimal) = 0.40 mph
             if data.len() < 4 {
                 return Err(anyhow!("LifeSpan speed data too short"));
             }
-            let speed_tenths = data[3] as f64;
-            let speed_mph = speed_tenths / 10.0;
+            let speed_hundredths = data[3] as f64;
+            let speed_mph = speed_hundredths / 100.0;
 
             // Convert mph to m/s (1 mph = 0.44704 m/s)
             let speed_ms = speed_mph * 0.44704;
@@ -307,9 +307,9 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Validate: speed should be reasonable (0-10 mph for walking)
             if speed_mph >= 0.0 && speed_mph <= 10.0 {
                 result.speed = Some(speed_ms);
-                debug!("LifeSpan speed: {:.1} mph = {:.2} m/s", speed_mph, speed_ms);
+                debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
             } else {
-                debug!("Invalid speed: {:.1} mph", speed_mph);
+                debug!("Invalid speed: {:.2} mph", speed_mph);
             }
         }
 
