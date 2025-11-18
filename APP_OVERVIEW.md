@@ -255,9 +255,9 @@ Treadmill → BLE → App (local) → Apple Health (local) → iCloud (encrypted
 
 ## 📋 Build Requirements
 
-- **Xcode**: 15.0+
-- **iOS Deployment Target**: 18.0+
-- **Swift**: 5.9+
+- **Xcode**: 16.0+
+- **iOS Deployment Target**: 26.0+
+- **Swift**: 6.0+
 - **Frameworks**:
   - HealthKit
   - CoreBluetooth
