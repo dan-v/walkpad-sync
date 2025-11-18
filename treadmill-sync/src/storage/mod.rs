@@ -142,6 +142,7 @@ impl Storage {
         Ok(workout)
     }
 
+    #[allow(dead_code)]
     pub async fn get_workout(&self, id: i64) -> Result<Option<Workout>> {
         let workout = sqlx::query_as::<_, Workout>("SELECT * FROM workouts WHERE id = ?")
             .bind(id)

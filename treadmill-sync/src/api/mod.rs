@@ -215,7 +215,12 @@ async fn confirm_sync(
     axum::extract::Path(workout_id): axum::extract::Path<i64>,
     Json(req): Json<ConfirmSyncRequest>,
 ) -> Result<Json<ConfirmSyncResponse>, ApiError> {
-    info!("Confirming sync for workout {} from device {}", workout_id, req.device_id);
+    if let Some(ref hk_uuid) = req.healthkit_uuid {
+        info!("Confirming sync for workout {} from device {} (HealthKit UUID: {})",
+              workout_id, req.device_id, hk_uuid);
+    } else {
+        info!("Confirming sync for workout {} from device {}", workout_id, req.device_id);
+    }
 
     state.storage
         .update_sync_checkpoint(&req.device_id, workout_id)

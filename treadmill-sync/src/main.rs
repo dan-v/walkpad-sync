@@ -46,7 +46,7 @@ async fn main() -> Result<()> {
     // Initialize Bluetooth manager
     let (bluetooth_manager, _status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
-        config.bluetooth.device_name_filter.clone(),
+        config.bluetooth.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
 

@@ -12,6 +12,16 @@ path = "./treadmill.db"
 #   - Your specific device name
 device_name_filter = "TR"
 
+# Timeout in seconds for scanning for treadmill
+scan_timeout_secs = 30
+
+# Seconds of zero speed before ending workout
+# Increase this if your treadmill stays at zero speed during pauses
+workout_end_timeout_secs = 30
+
+# Seconds to wait before reconnecting after disconnection
+reconnect_delay_secs = 5
+
 [server]
 # Host to bind to (0.0.0.0 allows connections from any device on network)
 host = "0.0.0.0"
