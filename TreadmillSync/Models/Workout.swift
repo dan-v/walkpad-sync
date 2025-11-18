@@ -4,7 +4,9 @@ import Foundation
 
 private enum DateFormatters {
     static let iso8601: ISO8601DateFormatter = {
-        ISO8601DateFormatter()
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return formatter
     }()
 
     static let display: DateFormatter = {

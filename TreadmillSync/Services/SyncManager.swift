@@ -93,7 +93,25 @@ class SyncManager: ObservableObject {
 
             // Sync each workout to HealthKit
             var successCount = 0
+            var failedWorkouts: [(Int64, Error)] = []
+            var skippedWorkouts: [Int64] = []
+
             for workout in pending {
+                // Skip workouts that are incomplete (no end time)
+                guard workout.endTime != nil else {
+                    print("⚠️ Skipping workout \(workout.id): still in progress (no end time)")
+                    skippedWorkouts.append(workout.id)
+                    continue
+                }
+
+                // Skip workouts with no meaningful data (zero distance and zero calories)
+                // HealthKit rejects these as invalid
+                if (workout.totalDistance ?? 0) == 0 && (workout.totalCalories ?? 0) == 0 {
+                    print("⚠️ Skipping workout \(workout.id): no distance or calories recorded")
+                    skippedWorkouts.append(workout.id)
+                    continue
+                }
+
                 do {
                     // Fetch samples
                     let samples = try await apiClient.fetchWorkoutSamples(workoutId: workout.id)
@@ -107,7 +125,31 @@ class SyncManager: ObservableObject {
                     successCount += 1
                 } catch {
                     print("Failed to sync workout \(workout.id): \(error)")
+                    failedWorkouts.append((workout.id, error))
                     // Continue with next workout even if one fails
+                }
+            }
+
+            // Report skipped workouts
+            if !skippedWorkouts.isEmpty {
+                let skippedIds = skippedWorkouts.map { "\($0)" }.joined(separator: ", ")
+                print("ℹ️ Skipped in-progress workouts: \(skippedIds)")
+            }
+
+            // Report failures if any
+            if !failedWorkouts.isEmpty {
+                let failedIds = failedWorkouts.map { "\($0.0)" }.joined(separator: ", ")
+                print("⚠️ Failed to sync workouts: \(failedIds)")
+
+                // Show detailed error for first failure
+                if let firstError = failedWorkouts.first {
+                    syncError = NSError(
+                        domain: "SyncManager",
+                        code: -1,
+                        userInfo: [
+                            NSLocalizedDescriptionKey: "Failed to sync workout \(firstError.0): \(firstError.1.localizedDescription)"
+                        ]
+                    )
                 }
             }
 
@@ -131,6 +173,79 @@ class SyncManager: ObservableObject {
     func performBackgroundSync() async {
         // Background sync is more conservative
         await performSync()
+    }
+
+    // MARK: - Individual Workout Actions
+
+    func syncWorkout(_ workout: Workout) async {
+        guard !isSyncing else { return }
+
+        isSyncing = true
+        syncError = nil
+        syncSuccessMessage = nil
+
+        do {
+            // Skip workouts that are incomplete (no end time)
+            guard workout.endTime != nil else {
+                syncError = NSError(
+                    domain: "SyncManager",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot sync in-progress workout"]
+                )
+                isSyncing = false
+                return
+            }
+
+            // Skip workouts with no meaningful data
+            if (workout.totalDistance ?? 0) == 0 && (workout.totalCalories ?? 0) == 0 {
+                syncError = NSError(
+                    domain: "SyncManager",
+                    code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Cannot sync workout with no distance or calories"]
+                )
+                isSyncing = false
+                return
+            }
+
+            // Fetch samples
+            let samples = try await apiClient.fetchWorkoutSamples(workoutId: workout.id)
+
+            // Save to HealthKit
+            let healthKitUUID = try await healthKitManager.saveWorkout(workout, samples: samples)
+
+            // Confirm sync with server
+            try await apiClient.confirmSync(workoutId: workout.id, healthKitUUID: healthKitUUID)
+
+            // Reload workouts to update list
+            await loadWorkouts()
+
+            syncSuccessMessage = "Successfully synced workout to Apple Health"
+
+        } catch {
+            syncError = NSError(
+                domain: "SyncManager",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to sync workout: \(error.localizedDescription)"]
+            )
+        }
+
+        isSyncing = false
+    }
+
+    func deleteWorkout(_ workout: Workout) async {
+        do {
+            try await apiClient.deleteWorkout(workoutId: workout.id)
+
+            // Reload workouts to update list
+            await loadWorkouts()
+
+        } catch {
+            syncError = NSError(
+                domain: "SyncManager",
+                code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to delete workout: \(error.localizedDescription)"]
+            )
+        }
     }
 
     // MARK: - Notifications

@@ -15,7 +15,10 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
-use ftms::{parse_treadmill_data, TreadmillData, TREADMILL_DATA_UUID};
+use ftms::{
+    parse_treadmill_data, parse_lifespan_response, TreadmillData,
+    TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, LifeSpanQuery,
+};
 
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
@@ -109,18 +112,54 @@ impl BluetoothManager {
         peripheral.discover_services().await?;
         let chars = peripheral.characteristics();
 
+        // Log all discovered services and characteristics for debugging
+        info!("Discovered {} characteristics on treadmill", chars.len());
+        for (i, char) in chars.iter().enumerate() {
+            debug!("  [{}] Service: {}, Characteristic: {}, Properties: {:?}",
+                   i, char.service_uuid, char.uuid, char.properties);
+        }
+
+        // Try to find FTMS characteristic first, then fall back to LifeSpan proprietary
         let treadmill_char = chars
             .iter()
             .find(|c| c.uuid == TREADMILL_DATA_UUID)
-            .ok_or_else(|| anyhow!("Treadmill data characteristic not found"))?;
+            .or_else(|| {
+                debug!("FTMS characteristic not found, trying LifeSpan proprietary protocol...");
+                chars.iter().find(|c| c.uuid == LIFESPAN_DATA_UUID)
+            })
+            .ok_or_else(|| {
+                warn!("Neither FTMS (UUID: {}) nor LifeSpan (UUID: {}) characteristic found",
+                      TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID);
+                warn!("Your treadmill may use a different protocol");
+                warn!("Check the characteristic list above to see what your treadmill exposes");
+                anyhow!("Treadmill data characteristic not found")
+            })?;
+
+        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
+            info!("Using LifeSpan proprietary protocol (UUID: {})", LIFESPAN_DATA_UUID);
+            info!("Will log raw data to help reverse-engineer the protocol format");
+        } else {
+            info!("Using standard FTMS protocol (UUID: {})", TREADMILL_DATA_UUID);
+        }
 
         // Subscribe to notifications
         peripheral.subscribe(treadmill_char).await?;
         info!("Subscribed to treadmill data notifications");
 
+        // Send handshake if using LifeSpan protocol
+        if treadmill_char.uuid == LIFESPAN_DATA_UUID {
+            info!("Sending LifeSpan handshake sequence ({} commands)...", LIFESPAN_HANDSHAKE.len());
+            for (i, cmd) in LIFESPAN_HANDSHAKE.iter().enumerate() {
+                peripheral.write(treadmill_char, cmd, btleplug::api::WriteType::WithResponse).await?;
+                debug!("Sent handshake command {}/{}: {:02X?}", i + 1, LIFESPAN_HANDSHAKE.len(), cmd);
+                sleep(Duration::from_millis(100)).await;
+            }
+            info!("Handshake complete");
+        }
+
         let _ = self.status_tx.send(ConnectionStatus::Connected);
 
-        // Monitor notifications
+        // Monitor notifications (will poll for LifeSpan or passively listen for FTMS)
         self.monitor_notifications(&peripheral, treadmill_char).await?;
 
         Ok(())
@@ -131,6 +170,8 @@ impl BluetoothManager {
 
         // Scan for configured timeout
         let timeout = self.config.scan_timeout_secs;
+        let mut discovered_devices: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         for i in 0..timeout {
             sleep(Duration::from_secs(1)).await;
 
@@ -138,6 +179,11 @@ impl BluetoothManager {
             for peripheral in peripherals {
                 if let Ok(Some(props)) = peripheral.properties().await {
                     if let Some(name) = props.local_name {
+                        // Log all discovered devices for debugging
+                        if discovered_devices.insert(name.clone()) {
+                            debug!("Discovered BLE device: '{}' (address: {:?})", name, props.address);
+                        }
+
                         if name.contains(&self.config.device_name_filter) {
                             info!("Found treadmill '{}' after {} seconds", name, i + 1);
                             adapter.stop_scan().await?;
@@ -149,6 +195,17 @@ impl BluetoothManager {
         }
 
         adapter.stop_scan().await?;
+
+        // Log summary of discovered devices for debugging
+        if discovered_devices.is_empty() {
+            warn!("No BLE devices discovered at all. Is Bluetooth enabled and are there devices nearby?");
+        } else {
+            warn!("Treadmill not found. Discovered {} device(s): {:?}",
+                  discovered_devices.len(),
+                  discovered_devices.iter().collect::<Vec<_>>());
+            warn!("Hint: Update device_name_filter in config.toml to match your treadmill's name");
+        }
+
         Err(anyhow!("Treadmill not found after {} seconds", timeout))
     }
 
@@ -161,16 +218,123 @@ impl BluetoothManager {
         let mut last_distance: Option<u32> = None;
         let mut last_calories: Option<u16> = None;
 
+        // For LifeSpan protocol: track pending queries with shared queue
+        let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
+        let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
+
+        // For LifeSpan: accumulate responses from all 5 queries into complete samples
+        let mut lifespan_accumulator = if is_lifespan {
+            Some(TreadmillData::default())
+        } else {
+            None
+        };
+
+        // Start polling task for LifeSpan protocol
+        let poll_task = if is_lifespan {
+            let peripheral = peripheral.clone();
+            let char = char.clone();
+            let pending_queries = pending_queries.clone();
+
+            Some(tokio::spawn(async move {
+                let queries = LifeSpanQuery::all_queries();
+                let query_delay = Duration::from_millis(300);
+
+                loop {
+                    for query in &queries {
+                        let cmd = query.command();
+                        if let Err(e) = peripheral.write(&char, &cmd, btleplug::api::WriteType::WithResponse).await {
+                            error!("Failed to write LifeSpan query {:?}: {}", query, e);
+                            return;
+                        }
+
+                        // Enqueue the query we just sent
+                        {
+                            let mut queue = pending_queries.write().await;
+                            queue.push_back(*query);
+                            // Prevent runaway queue if treadmill stops responding
+                            if queue.len() > 20 {
+                                queue.pop_front();
+                            }
+                        }
+
+                        debug!("Sent LifeSpan query: {:?}", query);
+                        tokio::time::sleep(query_delay).await;
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
         while let Some(notification) = notification_stream.next().await {
             if notification.uuid != char.uuid {
                 continue;
             }
 
-            match parse_treadmill_data(&notification.value) {
-                Ok(data) => {
-                    let current_speed = data.speed.unwrap_or(0.0);
-                    debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, samples={}",
-                           current_speed, data.incline.unwrap_or(0.0), data.distance, sample_count);
+            // Handle LifeSpan vs FTMS protocol
+            let data = if is_lifespan {
+                // Dequeue the pending query
+                let query = {
+                    let mut queue = pending_queries.write().await;
+                    queue.pop_front()
+                };
+
+                if let Some(query) = query {
+                    // Parse response for this specific query
+                    match parse_lifespan_response(&notification.value, query) {
+                        Ok(partial_data) => {
+                            // Accumulate this response into the accumulator
+                            if let Some(ref mut acc) = lifespan_accumulator {
+                                // Merge partial_data fields into accumulator
+                                if partial_data.speed.is_some() {
+                                    acc.speed = partial_data.speed;
+                                }
+                                if partial_data.distance.is_some() {
+                                    acc.distance = partial_data.distance;
+                                }
+                                if partial_data.total_energy.is_some() {
+                                    acc.total_energy = partial_data.total_energy;
+                                }
+                                if partial_data.elapsed_time.is_some() {
+                                    acc.elapsed_time = partial_data.elapsed_time;
+                                }
+
+                                // Time query is the last in the cycle - process accumulated data
+                                if query == LifeSpanQuery::Time {
+                                    let complete_data = acc.clone();
+                                    *acc = TreadmillData::default(); // Reset for next cycle
+                                    complete_data
+                                } else {
+                                    // Not ready yet, skip this notification
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
+                        }
+                        Err(e) => {
+                            debug!("Failed to parse LifeSpan response for {:?}: {}", query, e);
+                            continue;
+                        }
+                    }
+                } else {
+                    debug!("Received LifeSpan data with no pending query");
+                    continue;
+                }
+            } else {
+                // Parse standard FTMS protocol
+                match parse_treadmill_data(&notification.value) {
+                    Ok(data) => data,
+                    Err(e) => {
+                        warn!("Failed to parse FTMS treadmill data: {}", e);
+                        continue;
+                    }
+                }
+            };
+
+            let current_speed = data.speed.unwrap_or(0.0);
+            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
+                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
                     if workout_started {
@@ -230,10 +394,6 @@ impl BluetoothManager {
                         }
                     }
 
-                    // Track last cumulative values for reset detection
-                    last_distance = data.distance;
-                    last_calories = data.total_energy;
-
                     // Detect workout start (speed > 0)
                     if !workout_started && current_speed > 0.1 {
                         info!("Workout started! Initial speed: {:.2} m/s", current_speed);
@@ -264,8 +424,22 @@ impl BluetoothManager {
                             sample_count += 1;
                         }
 
-                        // Detect workout end (speed = 0 for sustained period)
-                        if current_speed < 0.1 {
+                        // Detect workout end (no activity for sustained period)
+                        // Check if distance or calories have changed since last sample
+                        let distance_changed = match (data.distance, last_distance) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        let calories_changed = match (data.total_energy, last_calories) {
+                            (Some(curr), Some(prev)) => curr != prev,
+                            _ => false,
+                        };
+
+                        // Only count as "inactive" if speed is 0 AND neither distance nor calories changed
+                        let is_inactive = current_speed < 0.1 && !distance_changed && !calories_changed;
+
+                        if is_inactive {
                             zero_speed_count += 1;
 
                             if zero_speed_count == 10 {
@@ -274,7 +448,7 @@ impl BluetoothManager {
                             }
 
                             if zero_speed_count >= zero_speed_threshold {
-                                info!("Workout ended after {} seconds of zero speed. Total samples: {}",
+                                info!("Workout ended after {} seconds of inactivity. Total samples: {}",
                                       zero_speed_count, sample_count);
 
                                 if let Err(e) = self.end_workout().await {
@@ -288,18 +462,17 @@ impl BluetoothManager {
                                 }
                             }
                         } else {
-                            // Reset counter if speed picks back up
+                            // Reset counter if any activity detected
                             if zero_speed_count > 0 {
-                                debug!("Speed resumed, resetting end-workout timer");
+                                debug!("Activity detected (speed or distance/calories changed), resetting end-workout timer");
                                 zero_speed_count = 0;
                             }
                         }
                     }
-                }
-                Err(e) => {
-                    warn!("Failed to parse treadmill data: {}", e);
-                }
-            }
+
+                    // Track last cumulative values for next iteration (after workout end detection)
+                    last_distance = data.distance;
+                    last_calories = data.total_energy;
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
@@ -315,6 +488,11 @@ impl BluetoothManager {
 
                 return Err(anyhow!("Connection lost"));
             }
+        }
+
+        // Cancel polling task if it exists
+        if let Some(task) = poll_task {
+            task.abort();
         }
 
         Ok(())
@@ -440,8 +618,18 @@ impl BluetoothManager {
             };
 
             // Additional validation
-            if duration < 10 {
-                warn!("Workout {} too short: only {} seconds. Deleting.", workout_id, duration);
+            const MIN_DURATION_SECONDS: i64 = 30;
+            if duration < MIN_DURATION_SECONDS {
+                warn!("Workout {} too short: only {} seconds (minimum {}s). Deleting.",
+                      workout_id, duration, MIN_DURATION_SECONDS);
+                self.storage.delete_workout(workout_id).await?;
+                return Ok(());
+            }
+
+            // Validate that workout has meaningful activity data
+            // HealthKit rejects workouts with no distance and no calories
+            if agg.total_distance == 0 && agg.total_calories == 0 {
+                warn!("Workout {} has no meaningful data (0m distance, 0 kcal). Deleting.", workout_id);
                 self.storage.delete_workout(workout_id).await?;
                 return Ok(());
             }
@@ -517,5 +705,21 @@ impl BluetoothManager {
         }
 
         Ok(None)
+    }
+
+    /// Gracefully shutdown, ending any active workout
+    pub async fn shutdown(&self) -> Result<()> {
+        let current = self.current_workout_id.read().await;
+
+        if let Some(workout_id) = *current {
+            info!("Shutting down with active workout {}, ending gracefully...", workout_id);
+            drop(current); // Release read lock before calling end_workout
+            self.end_workout().await?;
+            info!("Active workout ended successfully during shutdown");
+        } else {
+            info!("No active workout during shutdown");
+        }
+
+        Ok(())
     }
 }

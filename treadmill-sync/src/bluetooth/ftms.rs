@@ -2,7 +2,7 @@ use anyhow::{anyhow, Result};
 use tracing::debug;
 use uuid::Uuid;
 
-// FTMS Service and Characteristic UUIDs
+// FTMS Service and Characteristic UUIDs (Standard Protocol)
 #[allow(dead_code)]
 pub const FTMS_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001826_0000_1000_8000_00805F9B34FB);
 pub const TREADMILL_DATA_UUID: Uuid = Uuid::from_u128(0x00002ACD_0000_1000_8000_00805F9B34FB);
@@ -12,6 +12,51 @@ pub const INDOOR_BIKE_DATA_UUID: Uuid = Uuid::from_u128(0x00002AD2_0000_1000_800
 pub const FITNESS_MACHINE_CONTROL_POINT_UUID: Uuid = Uuid::from_u128(0x00002AD9_0000_1000_8000_00805F9B34FB);
 #[allow(dead_code)]
 pub const FITNESS_MACHINE_STATUS_UUID: Uuid = Uuid::from_u128(0x00002ADA_0000_1000_8000_00805F9B34FB);
+
+// LifeSpan Proprietary Protocol UUIDs
+pub const LIFESPAN_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000FFF0_0000_1000_8000_00805F9B34FB);
+pub const LIFESPAN_DATA_UUID: Uuid = Uuid::from_u128(0x0000FFF1_0000_1000_8000_00805F9B34FB);
+#[allow(dead_code)]
+pub const LIFESPAN_CONTROL_UUID: Uuid = Uuid::from_u128(0x0000FFF2_0000_1000_8000_00805F9B34FB);
+
+// LifeSpan Proprietary Protocol Commands
+pub const LIFESPAN_HANDSHAKE: [[u8; 5]; 4] = [
+    [0x02, 0x00, 0x00, 0x00, 0x00],
+    [0xC2, 0x00, 0x00, 0x00, 0x00],
+    [0xE9, 0xFF, 0x00, 0x00, 0x00],
+    [0xE4, 0x00, 0xF4, 0x00, 0x00],
+];
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LifeSpanQuery {
+    Steps,
+    Distance,
+    Calories,
+    Speed,
+    Time,
+}
+
+impl LifeSpanQuery {
+    pub fn command(&self) -> [u8; 5] {
+        match self {
+            LifeSpanQuery::Steps => [0xA1, 0x88, 0x00, 0x00, 0x00],
+            LifeSpanQuery::Distance => [0xA1, 0x85, 0x00, 0x00, 0x00],
+            LifeSpanQuery::Calories => [0xA1, 0x87, 0x00, 0x00, 0x00],
+            LifeSpanQuery::Speed => [0xA1, 0x82, 0x00, 0x00, 0x00],
+            LifeSpanQuery::Time => [0xA1, 0x89, 0x00, 0x00, 0x00],
+        }
+    }
+
+    pub fn all_queries() -> [LifeSpanQuery; 5] {
+        [
+            LifeSpanQuery::Steps,
+            LifeSpanQuery::Distance,
+            LifeSpanQuery::Calories,
+            LifeSpanQuery::Speed,
+            LifeSpanQuery::Time,
+        ]
+    }
+}
 
 #[derive(Debug, Clone, Default)]
 pub struct TreadmillData {
@@ -222,6 +267,125 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         result.elapsed_time,
         result.power_output
     );
+
+    Ok(result)
+}
+
+/// Parse LifeSpan proprietary protocol response
+pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<TreadmillData> {
+    if data.len() < 4 {
+        return Err(anyhow!("LifeSpan data too short: {} bytes", data.len()));
+    }
+
+    let mut result = TreadmillData::default();
+
+    // Log raw response
+    debug!(
+        "LifeSpan response for {:?}: bytes={:02X?}",
+        query, data
+    );
+
+    // Response format:
+    // bytes[0] = 0xA1 (command echo)
+    // bytes[1] = 0xAA (status byte)
+    // bytes[2] = 0x00 (header)
+    // bytes[3+] = actual data
+
+    match query {
+        LifeSpanQuery::Speed => {
+            // Speed format: bytes[3] is hundredths of mph
+            // Example: 0x28 (40 decimal) = 0.40 mph
+            if data.len() < 4 {
+                return Err(anyhow!("LifeSpan speed data too short"));
+            }
+            let speed_hundredths = data[3] as f64;
+            let speed_mph = speed_hundredths / 100.0;
+
+            // Convert mph to m/s (1 mph = 0.44704 m/s)
+            let speed_ms = speed_mph * 0.44704;
+
+            // Validate: speed should be reasonable (0-10 mph for walking)
+            if speed_mph >= 0.0 && speed_mph <= 10.0 {
+                result.speed = Some(speed_ms);
+                debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
+            } else {
+                debug!("Invalid speed: {:.2} mph", speed_mph);
+            }
+        }
+
+        LifeSpanQuery::Distance => {
+            // Distance format: bytes[3-4] as 16-bit LE representing hundredths of miles
+            // Example: 0x0001 = 1 hundredth = 0.01 miles
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan distance data too short"));
+            }
+            let distance_hundredths = u16::from_le_bytes([data[3], data[4]]);
+            let distance_miles = distance_hundredths as f64 / 100.0;
+
+            // Convert miles to meters (1 mile = 1609.34 meters)
+            let distance_meters = (distance_miles * 1609.34) as u32;
+
+            // Validate: distance should be reasonable (0-50 miles = 0-5000 hundredths)
+            if distance_hundredths <= 5000 {
+                result.distance = Some(distance_meters);
+                debug!("LifeSpan distance: {:.2} miles = {} meters", distance_miles, distance_meters);
+            } else {
+                debug!("Invalid distance: {} hundredths ({:.2} miles)", distance_hundredths, distance_miles);
+            }
+        }
+
+        LifeSpanQuery::Calories => {
+            // Calories format: 16-bit little-endian in bytes[3] and bytes[4]
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan calories data too short"));
+            }
+            let calories = u16::from_le_bytes([data[3], data[4]]);
+
+            // Validate: calories should be reasonable (0-5000)
+            if calories <= 5000 {
+                result.total_energy = Some(calories);
+                debug!("LifeSpan calories: {} kcal", calories);
+            } else {
+                debug!("Invalid calories: {}", calories);
+            }
+        }
+
+        LifeSpanQuery::Steps => {
+            // Steps format: 16-bit little-endian in bytes[3] and bytes[4]
+            if data.len() < 5 {
+                return Err(anyhow!("LifeSpan steps data too short"));
+            }
+            let steps = u16::from_le_bytes([data[3], data[4]]);
+
+            // Note: steps are not directly used in TreadmillData, but we log them
+            debug!("LifeSpan steps: {}", steps);
+
+            // We could derive distance from steps if distance query fails
+            // Typical step length ~0.762 meters (2.5 feet)
+            // But we'll rely on the distance query primarily
+        }
+
+        LifeSpanQuery::Time => {
+            // Time format: bytes[3] (hours), bytes[4] (minutes), bytes[5] (seconds)
+            if data.len() >= 6 {
+                let hours = data[3] as u32;
+                let minutes = data[4] as u32;
+                let seconds = data[5] as u32;
+
+                // Validate
+                if hours < 24 && minutes < 60 && seconds < 60 {
+                    // Use u32 for calculation to prevent overflow (23 * 3600 = 82,800 exceeds u16 max of 65,535)
+                    let total_seconds = hours * 3600 + minutes * 60 + seconds;
+                    // Safe to cast: max value is 23*3600 + 59*60 + 59 = 86,399 which fits in u16 is false,
+                    // but typical workouts are < 18 hours (65,535 seconds). Clamp to u16::MAX if needed.
+                    result.elapsed_time = Some(total_seconds.min(u16::MAX as u32) as u16);
+                    debug!("LifeSpan time: {}h {}m {}s = {} seconds", hours, minutes, seconds, total_seconds);
+                } else {
+                    debug!("Invalid time: {}:{}:{}", hours, minutes, seconds);
+                }
+            }
+        }
+    }
 
     Ok(result)
 }
