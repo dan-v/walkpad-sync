@@ -222,6 +222,13 @@ impl BluetoothManager {
         let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
         let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
 
+        // For LifeSpan: accumulate responses from all 5 queries into complete samples
+        let mut lifespan_accumulator = if is_lifespan {
+            Some(TreadmillData::default())
+        } else {
+            None
+        };
+
         // Start polling task for LifeSpan protocol
         let poll_task = if is_lifespan {
             let peripheral = peripheral.clone();
@@ -276,9 +283,34 @@ impl BluetoothManager {
                     // Parse response for this specific query
                     match parse_lifespan_response(&notification.value, query) {
                         Ok(partial_data) => {
-                            // We get partial data from each query - we'd need to accumulate
-                            // For now, just process what we have
-                            partial_data
+                            // Accumulate this response into the accumulator
+                            if let Some(ref mut acc) = lifespan_accumulator {
+                                // Merge partial_data fields into accumulator
+                                if partial_data.speed.is_some() {
+                                    acc.speed = partial_data.speed;
+                                }
+                                if partial_data.distance.is_some() {
+                                    acc.distance = partial_data.distance;
+                                }
+                                if partial_data.total_energy.is_some() {
+                                    acc.total_energy = partial_data.total_energy;
+                                }
+                                if partial_data.elapsed_time.is_some() {
+                                    acc.elapsed_time = partial_data.elapsed_time;
+                                }
+
+                                // Time query is the last in the cycle - process accumulated data
+                                if query == LifeSpanQuery::Time {
+                                    let complete_data = acc.clone();
+                                    *acc = TreadmillData::default(); // Reset for next cycle
+                                    complete_data
+                                } else {
+                                    // Not ready yet, skip this notification
+                                    continue;
+                                }
+                            } else {
+                                continue;
+                            }
                         }
                         Err(e) => {
                             debug!("Failed to parse LifeSpan response for {:?}: {}", query, e);
@@ -299,11 +331,6 @@ impl BluetoothManager {
                     }
                 }
             };
-
-            // For LifeSpan, skip responses that don't contain useful data (like Steps which we don't use)
-            if is_lifespan && data.speed.is_none() && data.distance.is_none() && data.total_energy.is_none() && data.elapsed_time.is_none() {
-                continue;
-            }
 
             let current_speed = data.speed.unwrap_or(0.0);
             debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
