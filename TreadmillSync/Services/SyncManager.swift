@@ -94,8 +94,16 @@ class SyncManager: ObservableObject {
             // Sync each workout to HealthKit
             var successCount = 0
             var failedWorkouts: [(Int64, Error)] = []
+            var skippedWorkouts: [Int64] = []
 
             for workout in pending {
+                // Skip workouts that are incomplete (no end time)
+                guard workout.endTime != nil else {
+                    print("⚠️ Skipping workout \(workout.id): still in progress (no end time)")
+                    skippedWorkouts.append(workout.id)
+                    continue
+                }
+
                 do {
                     // Fetch samples
                     let samples = try await apiClient.fetchWorkoutSamples(workoutId: workout.id)
@@ -112,6 +120,12 @@ class SyncManager: ObservableObject {
                     failedWorkouts.append((workout.id, error))
                     // Continue with next workout even if one fails
                 }
+            }
+
+            // Report skipped workouts
+            if !skippedWorkouts.isEmpty {
+                let skippedIds = skippedWorkouts.map { "\($0)" }.joined(separator: ", ")
+                print("ℹ️ Skipped in-progress workouts: \(skippedIds)")
             }
 
             // Report failures if any
