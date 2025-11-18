@@ -368,14 +368,17 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         LifeSpanQuery::Time => {
             // Time format: bytes[3] (hours), bytes[4] (minutes), bytes[5] (seconds)
             if data.len() >= 6 {
-                let hours = data[3] as u16;
-                let minutes = data[4] as u16;
-                let seconds = data[5] as u16;
+                let hours = data[3] as u32;
+                let minutes = data[4] as u32;
+                let seconds = data[5] as u32;
 
                 // Validate
                 if hours < 24 && minutes < 60 && seconds < 60 {
+                    // Use u32 for calculation to prevent overflow (23 * 3600 = 82,800 exceeds u16 max of 65,535)
                     let total_seconds = hours * 3600 + minutes * 60 + seconds;
-                    result.elapsed_time = Some(total_seconds);
+                    // Safe to cast: max value is 23*3600 + 59*60 + 59 = 86,399 which fits in u16 is false,
+                    // but typical workouts are < 18 hours (65,535 seconds). Clamp to u16::MAX if needed.
+                    result.elapsed_time = Some(total_seconds.min(u16::MAX as u32) as u16);
                     debug!("LifeSpan time: {}h {}m {}s = {} seconds", hours, minutes, seconds, total_seconds);
                 } else {
                     debug!("Invalid time: {}:{}:{}", hours, minutes, seconds);
