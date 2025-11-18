@@ -131,6 +131,8 @@ impl BluetoothManager {
 
         // Scan for configured timeout
         let timeout = self.config.scan_timeout_secs;
+        let mut discovered_devices: std::collections::HashSet<String> = std::collections::HashSet::new();
+
         for i in 0..timeout {
             sleep(Duration::from_secs(1)).await;
 
@@ -138,6 +140,11 @@ impl BluetoothManager {
             for peripheral in peripherals {
                 if let Ok(Some(props)) = peripheral.properties().await {
                     if let Some(name) = props.local_name {
+                        // Log all discovered devices for debugging
+                        if discovered_devices.insert(name.clone()) {
+                            debug!("Discovered BLE device: '{}' (address: {:?})", name, props.address);
+                        }
+
                         if name.contains(&self.config.device_name_filter) {
                             info!("Found treadmill '{}' after {} seconds", name, i + 1);
                             adapter.stop_scan().await?;
@@ -149,6 +156,17 @@ impl BluetoothManager {
         }
 
         adapter.stop_scan().await?;
+
+        // Log summary of discovered devices for debugging
+        if discovered_devices.is_empty() {
+            warn!("No BLE devices discovered at all. Is Bluetooth enabled and are there devices nearby?");
+        } else {
+            warn!("Treadmill not found. Discovered {} device(s): {:?}",
+                  discovered_devices.len(),
+                  discovered_devices.iter().collect::<Vec<_>>());
+            warn!("Hint: Update device_name_filter in config.toml to match your treadmill's name");
+        }
+
         Err(anyhow!("Treadmill not found after {} seconds", timeout))
     }
 
