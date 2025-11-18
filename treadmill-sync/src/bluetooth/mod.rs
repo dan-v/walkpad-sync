@@ -34,6 +34,7 @@ pub struct WorkoutMetrics {
     pub distance: Option<u32>,
     pub calories: Option<u16>,
     pub heart_rate: Option<u8>,
+    #[allow(dead_code)]
     pub elapsed_time: Option<u16>,
 }
 
