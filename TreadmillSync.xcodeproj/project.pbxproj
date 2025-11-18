@@ -8,14 +8,28 @@
 
 /* Begin PBXBuildFile section */
 		AA000001 /* TreadmillSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* TreadmillSyncApp.swift */; };
+		AA000002 /* TabRootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000002 /* TabRootView.swift */; };
+		AA000003 /* MainView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000003 /* MainView.swift */; };
+		AA000004 /* SessionReviewSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000004 /* SessionReviewSheet.swift */; };
 		AA000005 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000005 /* SettingsView.swift */; };
+		AA000006 /* TreadmillManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000006 /* TreadmillManager.swift */; };
+		AA000007 /* BLEDataParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000007 /* BLEDataParser.swift */; };
+		AA000008 /* DailySessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000008 /* DailySessionManager.swift */; };
 		AA000009 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000009 /* HealthKitManager.swift */; };
+		AA000010 /* WorkoutCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000010 /* WorkoutCoordinator.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		BB000001 /* TreadmillSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreadmillSyncApp.swift; sourceTree = "<group>"; };
+		BB000002 /* TabRootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabRootView.swift; sourceTree = "<group>"; };
+		BB000003 /* MainView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainView.swift; sourceTree = "<group>"; };
+		BB000004 /* SessionReviewSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionReviewSheet.swift; sourceTree = "<group>"; };
 		BB000005 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		BB000006 /* TreadmillManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreadmillManager.swift; sourceTree = "<group>"; };
+		BB000007 /* BLEDataParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BLEDataParser.swift; sourceTree = "<group>"; };
+		BB000008 /* DailySessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DailySessionManager.swift; sourceTree = "<group>"; };
 		BB000009 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
+		BB000010 /* WorkoutCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutCoordinator.swift; sourceTree = "<group>"; };
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB000012 /* TreadmillSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TreadmillSync.entitlements; sourceTree = "<group>"; };
 		BB000013 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
@@ -46,6 +60,7 @@
 			children = (
 				BB000001 /* TreadmillSyncApp.swift */,
 				EE000004 /* Views */,
+				EE000005 /* Managers */,
 				BB000011 /* Info.plist */,
 				BB000012 /* TreadmillSync.entitlements */,
 				BB000013 /* PrivacyInfo.xcprivacy */,
@@ -64,14 +79,22 @@
 		EE000004 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				BB000002 /* TabRootView.swift */,
+				BB000003 /* MainView.swift */,
+				BB000004 /* SessionReviewSheet.swift */,
 				BB000005 /* SettingsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
 		};
+		EE000005 /* Managers */ = {
 			isa = PBXGroup;
 			children = (
+				BB000006 /* TreadmillManager.swift */,
+				BB000007 /* BLEDataParser.swift */,
+				BB000008 /* DailySessionManager.swift */,
 				BB000009 /* HealthKitManager.swift */,
+				BB000010 /* WorkoutCoordinator.swift */,
 			);
 			path = Managers;
 			sourceTree = "<group>";
@@ -145,8 +168,15 @@
 			buildActionMask = 2147483647;
 			files = (
 				AA000001 /* TreadmillSyncApp.swift in Sources */,
+				AA000002 /* TabRootView.swift in Sources */,
+				AA000003 /* MainView.swift in Sources */,
+				AA000004 /* SessionReviewSheet.swift in Sources */,
 				AA000005 /* SettingsView.swift in Sources */,
+				AA000006 /* TreadmillManager.swift in Sources */,
+				AA000007 /* BLEDataParser.swift in Sources */,
+				AA000008 /* DailySessionManager.swift in Sources */,
 				AA000009 /* HealthKitManager.swift in Sources */,
+				AA000010 /* WorkoutCoordinator.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
