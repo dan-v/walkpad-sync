@@ -354,40 +354,53 @@ impl BluetoothManager {
                    current_speed, data.incline.unwrap_or(0.0), data.distance, data.steps, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
+                    // NOTE: LifeSpan u8 counters wrap at 255, so we check BOTH distance AND calories
+                    // to avoid false positives. True reset affects all counters simultaneously.
                     if workout_started {
                         let mut reset_detected_this_sample = false;
+                        let mut distance_reset = false;
+                        let mut calories_reset = false;
 
                         if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
-                            // Ignore exact 0 values as they're likely BLE glitches
-                            // Only flag as reset if:
-                            // 1. Distance decreased by >10m AND
-                            // 2. Current distance is not exactly 0 (glitch) AND
-                            // 3. Current distance is suspiciously low (< 100m indicates treadmill counter reset)
+                            // Check for distance reset/wraparound
                             if current_distance < prev_distance.saturating_sub(10)
                                 && current_distance != 0
                                 && current_distance < 100 {
-                                warn!("Potential treadmill reset: distance dropped from {}m to {}m",
+                                // Could be reset OR counter wraparound (wraps at 4105m)
+                                // Need to check calories too before confirming reset
+                                debug!("Distance dropped from {}m to {}m (reset or wraparound)",
                                       prev_distance, current_distance);
-                                reset_detected_this_sample = true;
+                                distance_reset = true;
                             } else if current_distance == 0 {
                                 // Log glitches but don't treat as reset
                                 warn!("Ignoring distance=0 reading (likely BLE glitch), keeping previous: {}m", prev_distance);
                             }
                         }
 
-                        if !reset_detected_this_sample {
-                            if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
-                                // Ignore exact 0 values for calories too
-                                if current_calories < prev_calories.saturating_sub(5)
-                                    && current_calories != 0
-                                    && current_calories < 50 {
-                                    warn!("Potential treadmill reset: calories dropped from {} to {}",
+                        if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
+                            // Check for calories reset/wraparound
+                            if current_calories < prev_calories.saturating_sub(5)
+                                && current_calories != 0
+                                && current_calories < 50 {
+                                // Could be reset OR counter wraparound (wraps at 255)
+                                // Need to check distance too before confirming reset
+                                debug!("Calories dropped from {} to {} (reset or wraparound)",
                                           prev_calories, current_calories);
-                                    reset_detected_this_sample = true;
-                                } else if current_calories == 0 {
-                                    warn!("Ignoring calories=0 reading (likely BLE glitch), keeping previous: {}", prev_calories);
-                                }
+                                calories_reset = true;
+                            } else if current_calories == 0 {
+                                warn!("Ignoring calories=0 reading (likely BLE glitch), keeping previous: {}", prev_calories);
                             }
+                        }
+
+                        // Only trigger reset if BOTH distance AND calories show reset pattern
+                        // (Wraparound only affects one counter at a time, reset affects both)
+                        if distance_reset && calories_reset {
+                            warn!("Treadmill reset detected: both distance and calories dropped simultaneously");
+                            reset_detected_this_sample = true;
+                        } else if distance_reset {
+                            debug!("Distance dropped but calories stable - likely distance counter wraparound, not reset");
+                        } else if calories_reset {
+                            debug!("Calories dropped but distance stable - likely calorie counter wraparound, not reset");
                         }
 
                         if reset_detected_this_sample {
