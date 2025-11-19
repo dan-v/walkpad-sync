@@ -312,12 +312,12 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Convert mph to m/s (1 mph = 0.44704 m/s)
             let speed_ms = speed_mph * 0.44704;
 
-            // Validate: speed should be reasonable (0-25 mph for most treadmills)
-            if speed_mph >= 0.0 && speed_mph <= 25.0 {
+            // Validate: speed should be reasonable (0-5 mph for walking pads)
+            if speed_mph >= 0.0 && speed_mph <= 5.0 {
                 result.speed = Some(speed_ms);
                 debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
-            } else {
-                warn!("Treadmill speed {:.2} mph exceeds typical range - possible data corruption, but recording anyway", speed_mph);
+            } else if speed_mph > 5.0 {
+                warn!("Walking pad speed {:.2} mph exceeds max (5 mph) - possible data corruption, but recording anyway", speed_mph);
                 // Still record it - don't silently discard potentially valid data
                 result.speed = Some(speed_ms);
             }
