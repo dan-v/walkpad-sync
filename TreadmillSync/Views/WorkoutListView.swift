@@ -97,19 +97,19 @@ struct WorkoutListView: View {
 
         // Watch for changes to liveWorkout from WebSocket
         syncManager.$liveWorkout
-            .sink { [weak self] workout in
+            .sink { workout in
                 print("📢 WorkoutListView: liveWorkout changed to: \(workout?.id ?? -1)")
-                Task {
+                Task { @MainActor in
                     if workout != nil {
                         print("  ▶️ Active workout detected, fetching live data...")
                         // WebSocket says there's an active workout - fetch full data with metrics
-                        await self?.fetchLiveWorkoutData()
-                        self?.startPeriodicUpdates()
+                        await self.fetchLiveWorkoutData()
+                        self.startPeriodicUpdates()
                     } else {
                         print("  ⏸️ No active workout, clearing live data")
                         // No active workout
-                        self?.liveWorkoutData = nil
-                        self?.updateTask?.cancel()
+                        self.liveWorkoutData = nil
+                        self.updateTask?.cancel()
                     }
                 }
             }
