@@ -9,7 +9,7 @@ use tokio::signal;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use api::{create_router, AppState};
+use api::{create_event_channel, create_router, AppState};
 use bluetooth::BluetoothManager;
 use config::Config;
 use storage::Storage;
@@ -43,10 +43,15 @@ async fn main() -> Result<()> {
     let storage = Arc::new(Storage::new(&database_url).await?);
     info!("Database initialized at {}", config.database.path);
 
+    // Create WebSocket event channel
+    let event_tx = create_event_channel();
+    info!("WebSocket event channel created");
+
     // Initialize Bluetooth manager
     let (bluetooth_manager, _status_rx) = BluetoothManager::new(
         Arc::clone(&storage),
         config.bluetooth.clone(),
+        event_tx.clone(),
     );
     let bluetooth_manager = Arc::new(bluetooth_manager);
 
@@ -64,6 +69,7 @@ async fn main() -> Result<()> {
     let app = create_router(AppState {
         storage: Arc::clone(&storage),
         bluetooth: Arc::clone(&bluetooth_manager),
+        event_tx: event_tx.clone(),
     });
 
     // Start HTTP server

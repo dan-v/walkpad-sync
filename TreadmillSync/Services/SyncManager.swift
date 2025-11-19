@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Combine
 
 @MainActor
 class SyncManager: ObservableObject {
@@ -11,17 +12,67 @@ class SyncManager: ObservableObject {
     @Published var isConnected = false
     @Published var pendingCount: Int = 0
     @Published var syncSuccessMessage: String?
+    @Published var liveWorkout: Workout?
 
     private var apiClient: APIClient {
         APIClient(config: serverConfig)
     }
 
     private let healthKitManager = HealthKitManager.shared
+    private var webSocketManager: WebSocketManager?
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
+        setupWebSocket()
+
         Task {
             await checkConnection()
             await loadWorkouts()
+        }
+    }
+
+    private func setupWebSocket() {
+        webSocketManager = WebSocketManager(serverConfig: serverConfig)
+
+        // Subscribe to WebSocket events
+        webSocketManager?.eventPublisher
+            .sink { [weak self] event in
+                Task { @MainActor in
+                    await self?.handleWebSocketEvent(event)
+                }
+            }
+            .store(in: &cancellables)
+
+        // Sync live workout state
+        webSocketManager?.$currentLiveWorkout
+            .assign(to: &$liveWorkout)
+
+        // Start WebSocket connection
+        webSocketManager?.connect()
+    }
+
+    private func handleWebSocketEvent(_ event: WorkoutEvent) async {
+        switch event {
+        case .workoutStarted(let workout):
+            print("📡 WebSocket: Workout started - \(workout.id)")
+            liveWorkout = workout
+
+        case .workoutSample(let workoutId, _):
+            print("📡 WebSocket: Sample received for workout \(workoutId)")
+            // Samples are handled by live workout views
+
+        case .workoutCompleted(let workout):
+            print("📡 WebSocket: Workout completed - \(workout.id)")
+            liveWorkout = nil
+            // Reload workouts to show the new completed workout
+            await loadWorkouts()
+
+        case .workoutFailed(let workoutId, let reason):
+            print("📡 WebSocket: Workout \(workoutId) failed - \(reason)")
+            liveWorkout = nil
+
+        case .connectionStatus(let connected):
+            print("📡 WebSocket: Server status - \(connected ? "connected" : "disconnected")")
         }
     }
 
@@ -38,6 +89,12 @@ class SyncManager: ObservableObject {
     func updateServerConfig(_ config: ServerConfig) async {
         serverConfig = config
         config.save()
+
+        // Reconnect WebSocket with new config
+        webSocketManager?.disconnect()
+        webSocketManager = WebSocketManager(serverConfig: config)
+        setupWebSocket()
+
         await checkConnection()
         await loadWorkouts()
     }

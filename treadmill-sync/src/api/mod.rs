@@ -8,10 +8,14 @@ use axum::{
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 use crate::bluetooth::BluetoothManager;
 use crate::storage::{Storage, Workout, WorkoutSample};
+
+mod websocket;
+pub use websocket::{create_event_channel, WorkoutEvent};
 
 // Validation constants
 const MAX_DEVICE_ID_LENGTH: usize = 128;
@@ -23,6 +27,7 @@ const MAX_WORKOUT_ID: i64 = i64::MAX / 2; // Reasonable upper bound
 pub struct AppState {
     pub storage: Arc<Storage>,
     pub bluetooth: Arc<BluetoothManager>,
+    pub event_tx: broadcast::Sender<WorkoutEvent>,
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -35,6 +40,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/workouts/:id", delete(delete_workout))
         .route("/api/workouts/live", get(get_live_workout))
         .route("/api/debug/live", get(get_debug_live))
+        .route("/ws/live", get(websocket::ws_handler))
         .with_state(state)
 }
 
