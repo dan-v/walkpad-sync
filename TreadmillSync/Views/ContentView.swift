@@ -1,14 +1,13 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var syncManager: SyncManager
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         TabView {
-            WorkoutListView()
+            ActivityListView()
                 .tabItem {
-                    Label("Workouts", systemImage: "figure.walk")
+                    Label("Activity", systemImage: "figure.walk")
                 }
 
             SettingsView()
