@@ -28,10 +28,6 @@ pub struct BluetoothConfig {
     #[serde(default = "default_scan_timeout")]
     pub scan_timeout_secs: u64,
 
-    /// Seconds of zero speed before ending workout
-    #[serde(default = "default_workout_end_timeout")]
-    pub workout_end_timeout_secs: u32,
-
     /// Seconds to wait before reconnecting after disconnection
     #[serde(default = "default_reconnect_delay")]
     pub reconnect_delay_secs: u64,
@@ -42,10 +38,6 @@ fn default_device_name_filter() -> String {
 }
 
 fn default_scan_timeout() -> u64 {
-    30
-}
-
-fn default_workout_end_timeout() -> u32 {
     30
 }
 
@@ -79,7 +71,6 @@ impl Default for Config {
             bluetooth: BluetoothConfig {
                 device_name_filter: default_device_name_filter(),
                 scan_timeout_secs: default_scan_timeout(),
-                workout_end_timeout_secs: default_workout_end_timeout(),
                 reconnect_delay_secs: default_reconnect_delay(),
             },
             server: ServerConfig {
