@@ -6,11 +6,11 @@ path = "./treadmill.db"
 # Filter for treadmill device name
 # This should match part of your treadmill's Bluetooth name
 # Common examples:
-#   - "TR" for LifeSpan treadmills
+#   - "LifeSpan" for LifeSpan walking pads/treadmills
 #   - "NordicTrack" for NordicTrack equipment
 #   - "Peloton" for Peloton equipment
 #   - Your specific device name
-device_name_filter = "TR"
+device_name_filter = "LifeSpan"
 
 # Timeout in seconds for scanning for treadmill
 scan_timeout_secs = 30

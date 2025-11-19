@@ -494,12 +494,12 @@ impl BluetoothManager {
 
                         // Detect workout end (no activity for sustained period)
                         // Check if distance or calories have changed since last sample
-                        let distance_changed = match (data.distance, last_distance) {
+                        let _distance_changed = match (data.distance, last_distance) {
                             (Some(curr), Some(prev)) => curr != prev,
                             _ => false,
                         };
 
-                        let calories_changed = match (data.total_energy, last_calories) {
+                        let _calories_changed = match (data.total_energy, last_calories) {
                             (Some(curr), Some(prev)) => curr != prev,
                             _ => false,
                         };

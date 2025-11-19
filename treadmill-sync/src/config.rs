@@ -38,7 +38,7 @@ pub struct BluetoothConfig {
 }
 
 fn default_device_name_filter() -> String {
-    "TR".to_string() // Common prefix for treadmills
+    "LifeSpan".to_string()
 }
 
 fn default_scan_timeout() -> u64 {
