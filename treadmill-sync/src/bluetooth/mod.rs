@@ -218,6 +218,7 @@ impl BluetoothManager {
         let mut zero_speed_count = 0;
         let zero_speed_threshold = self.config.workout_end_timeout_secs;
         let mut last_distance: Option<u32> = None;
+        let mut last_steps: Option<u16> = None;
         let mut last_calories: Option<u16> = None;
         let mut reset_detection_count = 0; // Track consecutive reset detections
         // Track distance/calories from 10 samples ago to detect slow updates
@@ -343,8 +344,8 @@ impl BluetoothManager {
             };
 
             let current_speed = data.speed.unwrap_or(0.0);
-            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, calories={:?}kcal, samples={}",
-                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.total_energy, sample_count);
+            debug!("Treadmill data: speed={:.2} m/s, incline={:.1}%, distance={:?}m, steps={:?}, calories={:?}kcal, samples={}",
+                   current_speed, data.incline.unwrap_or(0.0), data.distance, data.steps, data.total_energy, sample_count);
 
                     // Detect treadmill reset (cumulative values decreased significantly)
                     if workout_started {
@@ -402,6 +403,7 @@ impl BluetoothManager {
                                 zero_speed_count = 0;
                                 reset_detection_count = 0;
                                 last_distance = None;
+                                last_steps = None;
                                 last_calories = None;
                                 distance_10_samples_ago = None;
                                 calories_10_samples_ago = None;
@@ -468,6 +470,10 @@ impl BluetoothManager {
                         if sanitized_data.distance == Some(0) && last_distance.is_some() {
                             debug!("Replacing distance=0 with last known good: {:?}", last_distance);
                             sanitized_data.distance = last_distance;
+                        }
+                        if sanitized_data.steps == Some(0) && last_steps.is_some() {
+                            debug!("Replacing steps=0 with last known good: {:?}", last_steps);
+                            sanitized_data.steps = last_steps;
                         }
                         if sanitized_data.total_energy == Some(0) && last_calories.is_some() {
                             debug!("Replacing calories=0 with last known good: {:?}", last_calories);
@@ -553,6 +559,12 @@ impl BluetoothManager {
                     if let Some(dist) = data.distance {
                         if dist > 0 || !workout_started {
                             last_distance = data.distance;
+                        }
+                        // else: ignore 0 readings during active workout
+                    }
+                    if let Some(steps) = data.steps {
+                        if steps > 0 || !workout_started {
+                            last_steps = data.steps;
                         }
                         // else: ignore 0 readings during active workout
                     }
