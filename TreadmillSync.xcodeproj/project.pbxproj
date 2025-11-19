@@ -18,6 +18,7 @@
 		3726772C2ECCFBDC0017AC87 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677182ECCFBDC0017AC87 /* Workout.swift */; };
 		3726772D2ECCFBDC0017AC87 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3726771B2ECCFBDC0017AC87 /* HealthKitManager.swift */; };
 		AA000001 /* TreadmillSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* TreadmillSyncApp.swift */; };
+		BB000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000014 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB000012 /* TreadmillSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TreadmillSync.entitlements; sourceTree = "<group>"; };
 		BB000013 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		BB000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		CC000001 /* TreadmillSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TreadmillSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -92,6 +94,7 @@
 			isa = PBXGroup;
 			children = (
 				BB000001 /* TreadmillSyncApp.swift */,
+				BB000014 /* Assets.xcassets */,
 				BB000011 /* Info.plist */,
 				BB000012 /* TreadmillSync.entitlements */,
 				BB000013 /* PrivacyInfo.xcprivacy */,
@@ -168,6 +171,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				BB000015 /* Assets.xcassets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
