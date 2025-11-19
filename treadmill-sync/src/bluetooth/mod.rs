@@ -313,20 +313,22 @@ impl BluetoothManager {
                 }
             };
 
-            // Record the raw sample to database
-            if let Err(e) = self.record_sample(&data).await {
-                error!("Failed to record sample: {}", e);
-            } else {
-                sample_count += 1;
+            // Record the raw sample to database (only when moving)
+            if data.speed.unwrap_or(0.0) > 0.0 {
+                if let Err(e) = self.record_sample(&data).await {
+                    error!("Failed to record sample: {}", e);
+                } else {
+                    sample_count += 1;
 
-                // Log every 60 samples (~1 minute at 1 Hz)
-                if sample_count % 60 == 0 {
-                    info!("📈 Captured {} samples | Latest: speed={:.2} m/s, distance={:?}m, steps={:?}, calories={:?}kcal",
-                          sample_count,
-                          data.speed.unwrap_or(0.0),
-                          data.distance,
-                          data.steps,
-                          data.total_energy);
+                    // Log every 60 samples (~1 minute at 1 Hz)
+                    if sample_count % 60 == 0 {
+                        info!("📈 Captured {} samples | Latest: speed={:.2} m/s, distance={:?}m, steps={:?}, calories={:?}kcal",
+                              sample_count,
+                              data.speed.unwrap_or(0.0),
+                              data.distance,
+                              data.steps,
+                              data.total_energy);
+                    }
                 }
             }
 

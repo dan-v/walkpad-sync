@@ -10,6 +10,11 @@ struct ContentView: View {
                     Label("Activity", systemImage: "figure.walk")
                 }
 
+            StatsView()
+                .tabItem {
+                    Label("Stats", systemImage: "chart.line.uptrend.xyaxis")
+                }
+
             SettingsView()
                 .tabItem {
                     Label("Settings", systemImage: "gearshape")
