@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use tracing::debug;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 // FTMS Service and Characteristic UUIDs (Standard Protocol)
@@ -199,7 +199,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             return Err(anyhow!("Not enough data for elapsed time"));
         }
         let elapsed = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        result.elapsed_time = Some(elapsed);
+        result.elapsed_time = Some(elapsed as u32);
         debug!("FTMS ELAPSED TIME: {} seconds", elapsed);
         offset += 2;
     }
