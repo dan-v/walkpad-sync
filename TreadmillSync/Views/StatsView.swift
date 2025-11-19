@@ -2,7 +2,7 @@ import SwiftUI
 import Charts
 
 struct StatsView: View {
-    @StateObject private var apiClient = APIClient(config: ServerConfig.load())
+    private let apiClient = APIClient(config: ServerConfig.load())
     @State private var activityDates: [String] = []
     @State private var dailySummaries: [DailySummary] = []
     @State private var isLoading = false
