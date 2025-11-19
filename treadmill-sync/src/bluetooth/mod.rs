@@ -346,21 +346,34 @@ impl BluetoothManager {
                         let mut reset_detected_this_sample = false;
 
                         if let (Some(current_distance), Some(prev_distance)) = (data.distance, last_distance) {
-                            // If distance decreased by more than 10 meters, flag as potential reset
-                            if current_distance < prev_distance.saturating_sub(10) {
+                            // Ignore exact 0 values as they're likely BLE glitches
+                            // Only flag as reset if:
+                            // 1. Distance decreased by >10m AND
+                            // 2. Current distance is not exactly 0 (glitch) AND
+                            // 3. Current distance is suspiciously low (< 100m indicates treadmill counter reset)
+                            if current_distance < prev_distance.saturating_sub(10)
+                                && current_distance != 0
+                                && current_distance < 100 {
                                 warn!("Potential treadmill reset: distance dropped from {}m to {}m",
                                       prev_distance, current_distance);
                                 reset_detected_this_sample = true;
+                            } else if current_distance == 0 {
+                                // Log glitches but don't treat as reset
+                                warn!("Ignoring distance=0 reading (likely BLE glitch), keeping previous: {}m", prev_distance);
                             }
                         }
 
                         if !reset_detected_this_sample {
                             if let (Some(current_calories), Some(prev_calories)) = (data.total_energy, last_calories) {
-                                // If calories decreased by more than 5, flag as potential reset
-                                if current_calories < prev_calories.saturating_sub(5) {
+                                // Ignore exact 0 values for calories too
+                                if current_calories < prev_calories.saturating_sub(5)
+                                    && current_calories != 0
+                                    && current_calories < 50 {
                                     warn!("Potential treadmill reset: calories dropped from {} to {}",
                                           prev_calories, current_calories);
                                     reset_detected_this_sample = true;
+                                } else if current_calories == 0 {
+                                    warn!("Ignoring calories=0 reading (likely BLE glitch), keeping previous: {}", prev_calories);
                                 }
                             }
                         }
@@ -443,7 +456,18 @@ impl BluetoothManager {
 
                     // Record sample if workout is active
                     if workout_started {
-                        if let Err(e) = self.record_sample(&data).await {
+                        // Sanitize data: replace 0 values (BLE glitches) with last known good values
+                        let mut sanitized_data = data.clone();
+                        if sanitized_data.distance == Some(0) && last_distance.is_some() {
+                            debug!("Replacing distance=0 with last known good: {:?}", last_distance);
+                            sanitized_data.distance = last_distance;
+                        }
+                        if sanitized_data.total_energy == Some(0) && last_calories.is_some() {
+                            debug!("Replacing calories=0 with last known good: {:?}", last_calories);
+                            sanitized_data.total_energy = last_calories;
+                        }
+
+                        if let Err(e) = self.record_sample(&sanitized_data).await {
                             error!("Failed to record sample: {}", e);
                         } else {
                             sample_count += 1;
@@ -518,8 +542,19 @@ impl BluetoothManager {
                     }
 
                     // Track last cumulative values for next iteration (after workout end detection)
-                    last_distance = data.distance;
-                    last_calories = data.total_energy;
+                    // Only update if values are valid (not 0, which indicates BLE glitch)
+                    if let Some(dist) = data.distance {
+                        if dist > 0 || !workout_started {
+                            last_distance = data.distance;
+                        }
+                        // else: ignore 0 readings during active workout
+                    }
+                    if let Some(cal) = data.total_energy {
+                        if cal > 0 || !workout_started {
+                            last_calories = data.total_energy;
+                        }
+                        // else: ignore 0 readings during active workout
+                    }
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
