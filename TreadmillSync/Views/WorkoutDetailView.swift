@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct WorkoutDetailView: View {
+    @EnvironmentObject var syncManager: SyncManager
+    @Environment(\.dismiss) var dismiss
     let workout: Workout
 
     var body: some View {
@@ -69,13 +71,39 @@ struct WorkoutDetailView: View {
                 }
             }
 
-            // Status Section
+            // Actions Section
             Section {
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("Synced to Apple Health")
-                        .foregroundColor(.secondary)
+                Button {
+                    Task {
+                        await syncManager.syncWorkout(workout)
+                        dismiss()
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        Image(systemName: "heart.circle.fill")
+                            .font(.title3)
+                        Text("Add to Apple Health")
+                            .fontWeight(.semibold)
+                        Spacer()
+                    }
+                    .padding(.vertical, 8)
+                }
+                .listRowBackground(Color.green.opacity(0.1))
+                .foregroundColor(.green)
+
+                Button(role: .destructive) {
+                    Task {
+                        await syncManager.deleteWorkout(workout)
+                        dismiss()
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("Delete Workout")
+                        Spacer()
+                    }
+                    .padding(.vertical, 4)
                 }
             }
         }

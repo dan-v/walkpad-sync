@@ -47,19 +47,9 @@ struct WorkoutListView: View {
                         ForEach(groupedWorkouts.keys.sorted().reversed(), id: \.self) { date in
                             Section(header: Text(formatSectionHeader(date))) {
                                 ForEach(groupedWorkouts[date] ?? []) { workout in
-                                    WorkoutRow(
-                                        workout: workout,
-                                        onSync: {
-                                            Task {
-                                                await syncManager.syncWorkout(workout)
-                                            }
-                                        },
-                                        onDelete: {
-                                            Task {
-                                                await syncManager.deleteWorkout(workout)
-                                            }
-                                        }
-                                    )
+                                    NavigationLink(destination: WorkoutDetailView(workout: workout)) {
+                                        WorkoutRow(workout: workout)
+                                    }
                                 }
                             }
                         }
@@ -159,56 +149,32 @@ struct WorkoutListView: View {
 
 struct WorkoutRow: View {
     let workout: Workout
-    let onSync: () -> Void
-    let onDelete: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
-            // Workout Info
-            VStack(alignment: .leading, spacing: 8) {
-                Text(workout.dateFormatted)
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-
-                HStack(spacing: 16) {
-                    Label(workout.durationFormatted, systemImage: "clock")
-                    Label(workout.distanceFormatted, systemImage: "figure.walk")
-                    Label(workout.caloriesFormatted, systemImage: "flame")
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            Text(workout.dateFormatted)
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
-                if let avgHR = workout.avgHeartRate, let maxHR = workout.maxHeartRate {
-                    HStack(spacing: 8) {
-                        Image(systemName: "heart.fill")
-                            .foregroundColor(.red)
-                            .font(.caption)
-                        Text("Avg: \(avgHR) bpm")
-                        Text("•")
-                        Text("Max: \(maxHR) bpm")
-                    }
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                }
+            HStack(spacing: 16) {
+                Label(workout.durationFormatted, systemImage: "clock")
+                Label(workout.distanceFormatted, systemImage: "figure.walk")
+                Label(workout.caloriesFormatted, systemImage: "flame")
             }
+            .font(.subheadline)
+            .foregroundColor(.secondary)
 
-            Spacer()
-
-            // Action Buttons
-            VStack(spacing: 8) {
-                Button(action: onSync) {
-                    Image(systemName: "heart.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.green)
-                }
-                .buttonStyle(.plain)
-
-                Button(action: onDelete) {
-                    Image(systemName: "trash.circle.fill")
-                        .font(.title2)
+            if let avgHR = workout.avgHeartRate, let maxHR = workout.maxHeartRate {
+                HStack(spacing: 8) {
+                    Image(systemName: "heart.fill")
                         .foregroundColor(.red)
+                        .font(.caption)
+                    Text("Avg: \(avgHR) bpm")
+                    Text("•")
+                    Text("Max: \(maxHR) bpm")
                 }
-                .buttonStyle(.plain)
+                .font(.caption)
+                .foregroundColor(.secondary)
             }
         }
         .padding(.vertical, 4)
