@@ -327,6 +327,8 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         LifeSpanQuery::Distance => {
             // Distance format: bytes[3-4] as 16-bit LE representing hundredths of miles
             // Example: 0x0001 = 1 hundredth = 0.01 miles
+            // NOTE: This is a cumulative counter that persists across workouts and
+            // may wrap around at u16::MAX (65535 = 655.35 miles)
             if data.len() < 5 {
                 return Err(anyhow!("LifeSpan distance data too short"));
             }
@@ -336,13 +338,11 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Convert miles to meters (1 mile = 1609.34 meters)
             let distance_meters = (distance_miles * 1609.34) as u32;
 
-            // Validate: distance should be reasonable (0-50 miles = 0-5000 hundredths)
-            if distance_hundredths <= 5000 {
-                result.distance = Some(distance_meters);
-                debug!("LifeSpan distance: {:.2} miles = {} meters", distance_miles, distance_meters);
-            } else {
-                debug!("Invalid distance: {} hundredths ({:.2} miles)", distance_hundredths, distance_miles);
-            }
+            // Accept all distance values (treadmill uses cumulative counter)
+            // The baseline subtraction will handle converting to workout-relative distance
+            result.distance = Some(distance_meters);
+            debug!("LifeSpan distance: {:.2} miles = {} meters (raw: {} hundredths)",
+                   distance_miles, distance_meters, distance_hundredths);
         }
 
         LifeSpanQuery::Calories => {
