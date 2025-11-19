@@ -63,6 +63,7 @@ pub struct TreadmillData {
     pub speed: Option<f64>,           // m/s
     pub incline: Option<f64>,         // percentage
     pub distance: Option<u32>,        // meters
+    pub steps: Option<u16>,           // step count
     pub total_energy: Option<u16>,    // kcal
     pub energy_per_hour: Option<u16>, // kcal/hour
     pub heart_rate: Option<u8>,       // bpm
@@ -293,12 +294,19 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 
     match query {
         LifeSpanQuery::Speed => {
-            // Speed format: bytes[3] is hundredths of mph
-            // Example: 0x28 (40 decimal) = 0.40 mph
+            // Speed format: bytes[2] and bytes[3] encode speed in mph
+            // bytes[2] = whole mph (0, 1, 2, etc.)
+            // bytes[3] = hundredths of mph (0-99)
+            // Formula: speed_hundredths = bytes[2] * 100 + bytes[3]
+            // Examples:
+            //   [A1, AA, 00, 28] = 0*100 + 40 = 40 hundredths = 0.40 mph
+            //   [A1, AA, 00, 5A] = 0*100 + 90 = 90 hundredths = 0.90 mph
+            //   [A1, AA, 01, 00] = 1*100 + 0 = 100 hundredths = 1.00 mph
+            //   [A1, AA, 02, 32] = 2*100 + 50 = 250 hundredths = 2.50 mph
             if data.len() < 4 {
                 return Err(anyhow!("LifeSpan speed data too short"));
             }
-            let speed_hundredths = data[3] as f64;
+            let speed_hundredths = (data[2] as f64 * 100.0) + data[3] as f64;
             let speed_mph = speed_hundredths / 100.0;
 
             // Convert mph to m/s (1 mph = 0.44704 m/s)
@@ -356,13 +364,8 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
                 return Err(anyhow!("LifeSpan steps data too short"));
             }
             let steps = u16::from_le_bytes([data[3], data[4]]);
-
-            // Note: steps are not directly used in TreadmillData, but we log them
             debug!("LifeSpan steps: {}", steps);
-
-            // We could derive distance from steps if distance query fails
-            // Typical step length ~0.762 meters (2.5 feet)
-            // But we'll rely on the distance query primarily
+            result.steps = Some(steps);
         }
 
         LifeSpanQuery::Time => {

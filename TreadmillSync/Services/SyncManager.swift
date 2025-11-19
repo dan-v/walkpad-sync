@@ -20,8 +20,8 @@ class SyncManager: ObservableObject {
 
     init() {
         Task {
-            await loadWorkouts()
             await checkConnection()
+            await loadWorkouts()
         }
     }
 
@@ -55,8 +55,27 @@ class SyncManager: ObservableObject {
             let pending = try await apiClient.fetchPendingWorkouts()
             workouts = pending
             pendingCount = pending.count
+        } catch is CancellationError {
+            // Ignore task cancellation errors
+            return
+        } catch let error as URLError where error.code == .cancelled {
+            // Ignore URLSession cancellation errors
+            return
         } catch {
             syncError = error
+        }
+    }
+
+    // MARK: - Live Workout
+
+    func fetchLiveWorkout() async -> LiveWorkoutResponse? {
+        guard isConnected else { return nil }
+
+        do {
+            return try await apiClient.fetchLiveWorkout()
+        } catch {
+            // Silently fail for live workout polling
+            return nil
         }
     }
 
@@ -163,6 +182,10 @@ class SyncManager: ObservableObject {
                 showSuccessNotification(count: successCount)
             }
 
+        } catch is CancellationError {
+            // Ignore task cancellation errors
+        } catch let error as URLError where error.code == .cancelled {
+            // Ignore URLSession cancellation errors
         } catch {
             syncError = error
         }
@@ -221,6 +244,10 @@ class SyncManager: ObservableObject {
 
             syncSuccessMessage = "Successfully synced workout to Apple Health"
 
+        } catch is CancellationError {
+            // Ignore task cancellation errors
+        } catch let error as URLError where error.code == .cancelled {
+            // Ignore URLSession cancellation errors
         } catch {
             syncError = NSError(
                 domain: "SyncManager",
@@ -239,6 +266,10 @@ class SyncManager: ObservableObject {
             // Reload workouts to update list
             await loadWorkouts()
 
+        } catch is CancellationError {
+            // Ignore task cancellation errors
+        } catch let error as URLError where error.code == .cancelled {
+            // Ignore URLSession cancellation errors
         } catch {
             syncError = NSError(
                 domain: "SyncManager",

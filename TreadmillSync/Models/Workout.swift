@@ -43,13 +43,10 @@ struct Workout: Codable, Identifiable {
     let endTime: String?
     let totalDuration: Int64?
     let totalDistance: Int64?
+    let totalSteps: Int64?
     let avgSpeed: Double?
     let maxSpeed: Double?
-    let avgIncline: Double?
-    let maxIncline: Double?
     let totalCalories: Int64?
-    let avgHeartRate: Int64?
-    let maxHeartRate: Int64?
     let samplesUrl: String
 
     enum CodingKeys: String, CodingKey {
@@ -59,13 +56,10 @@ struct Workout: Codable, Identifiable {
         case endTime = "end_time"
         case totalDuration = "total_duration"
         case totalDistance = "total_distance"
+        case totalSteps = "total_steps"
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
-        case avgIncline = "avg_incline"
-        case maxIncline = "max_incline"
         case totalCalories = "total_calories"
-        case avgHeartRate = "avg_heart_rate"
-        case maxHeartRate = "max_heart_rate"
         case samplesUrl = "samples_url"
     }
 
@@ -118,20 +112,16 @@ struct WorkoutSample: Codable, Identifiable {
 
     let timestamp: String
     let speed: Double?
-    let incline: Double?
     let distance: Int64?
-    let heartRate: Int64?
     let calories: Int64?
-    let cadence: Int64?
+    let steps: Int64? // cumulative step count
 
     enum CodingKeys: String, CodingKey {
         case timestamp
         case speed
-        case incline
         case distance
-        case heartRate = "heart_rate"
         case calories
-        case cadence
+        case steps = "cadence" // Backend uses 'cadence' column for steps
     }
 
     var date: Date? {
@@ -156,5 +146,55 @@ struct RegisterRequest: Codable {
     enum CodingKeys: String, CodingKey {
         case deviceId = "device_id"
         case deviceName = "device_name"
+    }
+}
+
+// MARK: - Live Workout Data
+
+struct LiveWorkoutResponse: Codable {
+    let workout: Workout?
+    let currentMetrics: LiveWorkoutMetrics?
+    let recentSamples: [WorkoutSample]
+
+    enum CodingKeys: String, CodingKey {
+        case workout
+        case currentMetrics = "current_metrics"
+        case recentSamples = "recent_samples"
+    }
+}
+
+struct LiveWorkoutMetrics: Codable {
+    let currentSpeed: Double?
+    let distanceSoFar: Int64?
+    let stepsSoFar: Int64?
+    let caloriesSoFar: Int64?
+
+    enum CodingKeys: String, CodingKey {
+        case currentSpeed = "current_speed"
+        case distanceSoFar = "distance_so_far"
+        case stepsSoFar = "steps_so_far"
+        case caloriesSoFar = "calories_so_far"
+    }
+
+    var speedFormatted: String {
+        guard let speed = currentSpeed else { return "0.0" }
+        let mph = speed * 2.23694 // m/s to mph
+        return String(format: "%.1f", mph)
+    }
+
+    var distanceFormatted: String {
+        guard let meters = distanceSoFar else { return "0.00" }
+        let miles = Double(meters) / 1609.34
+        return String(format: "%.2f", miles)
+    }
+
+    var stepsFormatted: String {
+        guard let steps = stepsSoFar else { return "0" }
+        return "\(steps)"
+    }
+
+    var caloriesFormatted: String {
+        guard let cal = caloriesSoFar else { return "0" }
+        return "\(cal)"
     }
 }

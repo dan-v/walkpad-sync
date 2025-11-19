@@ -17,13 +17,10 @@ pub struct Workout {
     pub status: String,
     pub total_duration: Option<i64>,
     pub total_distance: Option<i64>,
+    pub total_steps: Option<i64>,
     pub avg_speed: Option<f64>,
     pub max_speed: Option<f64>,
-    pub avg_incline: Option<f64>,
-    pub max_incline: Option<f64>,
     pub total_calories: Option<i64>,
-    pub avg_heart_rate: Option<i64>,
-    pub max_heart_rate: Option<i64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -34,9 +31,7 @@ pub struct WorkoutSample {
     pub workout_id: i64,
     pub timestamp: String,
     pub speed: Option<f64>,
-    pub incline: Option<f64>,
     pub distance: Option<i64>,
-    pub heart_rate: Option<i64>,
     pub calories: Option<i64>,
     pub cadence: Option<i64>,
 }
@@ -99,13 +94,10 @@ impl Storage {
         end_time: DateTime<Utc>,
         total_duration: i64,
         total_distance: i64,
+        total_steps: i64,
         avg_speed: f64,
         max_speed: f64,
-        avg_incline: f64,
-        max_incline: f64,
         total_calories: i64,
-        avg_heart_rate: Option<i64>,
-        max_heart_rate: Option<i64>,
     ) -> Result<()> {
         let end_time_str = end_time.to_rfc3339();
         let updated_at = Utc::now().to_rfc3339();
@@ -116,26 +108,20 @@ impl Storage {
                 status = 'completed',
                 total_duration = ?,
                 total_distance = ?,
+                total_steps = ?,
                 avg_speed = ?,
                 max_speed = ?,
-                avg_incline = ?,
-                max_incline = ?,
                 total_calories = ?,
-                avg_heart_rate = ?,
-                max_heart_rate = ?,
                 updated_at = ?
              WHERE id = ?"
         )
         .bind(&end_time_str)
         .bind(total_duration)
         .bind(total_distance)
+        .bind(total_steps)
         .bind(avg_speed)
         .bind(max_speed)
-        .bind(avg_incline)
-        .bind(max_incline)
         .bind(total_calories)
-        .bind(avg_heart_rate)
-        .bind(max_heart_rate)
         .bind(&updated_at)
         .bind(workout_id)
         .execute(&self.pool)
@@ -182,9 +168,7 @@ impl Storage {
         workout_id: i64,
         timestamp: DateTime<Utc>,
         speed: Option<f64>,
-        incline: Option<f64>,
         distance: Option<i64>,
-        heart_rate: Option<i64>,
         calories: Option<i64>,
         cadence: Option<i64>,
     ) -> Result<()> {
@@ -192,15 +176,13 @@ impl Storage {
 
         sqlx::query(
             "INSERT INTO workout_samples
-             (workout_id, timestamp, speed, incline, distance, heart_rate, calories, cadence)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+             (workout_id, timestamp, speed, distance, calories, cadence)
+             VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(workout_id)
         .bind(&timestamp_str)
         .bind(speed)
-        .bind(incline)
         .bind(distance)
-        .bind(heart_rate)
         .bind(calories)
         .bind(cadence)
         .execute(&self.pool)
@@ -317,13 +299,10 @@ impl Storage {
             SELECT
                 COUNT(*) as count,
                 MAX(distance) as max_distance,
+                MAX(cadence) as max_steps,
                 MAX(calories) as max_calories,
                 AVG(CASE WHEN speed > 0 THEN speed END) as avg_speed,
                 MAX(speed) as max_speed,
-                AVG(incline) as avg_incline,
-                MAX(incline) as max_incline,
-                AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_hr,
-                MAX(heart_rate) as max_hr,
                 MIN(timestamp) as first_timestamp,
                 MAX(timestamp) as last_timestamp
             FROM workout_samples
@@ -337,13 +316,10 @@ impl Storage {
         Ok(WorkoutAggregates {
             sample_count: row.get::<i64, _>("count") as usize,
             total_distance: row.get::<Option<i64>, _>("max_distance").unwrap_or(0),
+            total_steps: row.get::<Option<i64>, _>("max_steps").unwrap_or(0),
             total_calories: row.get::<Option<i64>, _>("max_calories").unwrap_or(0),
             avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
             max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
-            avg_incline: row.get::<Option<f64>, _>("avg_incline").unwrap_or(0.0),
-            max_incline: row.get::<Option<f64>, _>("max_incline").unwrap_or(0.0),
-            avg_heart_rate: row.get::<Option<i64>, _>("avg_hr"),
-            max_heart_rate: row.get::<Option<i64>, _>("max_hr"),
             first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
             last_timestamp: row.get::<Option<String>, _>("last_timestamp"),
         })
@@ -354,13 +330,10 @@ impl Storage {
 pub struct WorkoutAggregates {
     pub sample_count: usize,
     pub total_distance: i64,
+    pub total_steps: i64,
     pub total_calories: i64,
     pub avg_speed: f64,
     pub max_speed: f64,
-    pub avg_incline: f64,
-    pub max_incline: f64,
-    pub avg_heart_rate: Option<i64>,
-    pub max_heart_rate: Option<i64>,
     pub first_timestamp: Option<String>,
     pub last_timestamp: Option<String>,
 }
