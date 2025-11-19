@@ -12,7 +12,15 @@ class SyncManager: ObservableObject {
     @Published var isConnected = false
     @Published var pendingCount: Int = 0
     @Published var syncSuccessMessage: String?
-    @Published var liveWorkout: Workout?
+    @Published var liveWorkout: Workout? {
+        didSet {
+            if let workout = liveWorkout {
+                print("🔄 SyncManager.liveWorkout updated to: \(workout.id)")
+            } else {
+                print("🔄 SyncManager.liveWorkout cleared (nil)")
+            }
+        }
+    }
 
     private var apiClient: APIClient {
         APIClient(config: serverConfig)
@@ -131,7 +139,26 @@ class SyncManager: ObservableObject {
         do {
             return try await apiClient.fetchLiveWorkout()
         } catch {
-            // Silently fail for live workout polling
+            // Log error for debugging
+            print("❌ Failed to fetch live workout: \(error)")
+            if let decodingError = error as? DecodingError {
+                switch decodingError {
+                case .typeMismatch(let type, let context):
+                    print("  Type mismatch: expected \(type)")
+                    print("  Context: \(context.debugDescription)")
+                    print("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: "."))")
+                case .valueNotFound(let type, let context):
+                    print("  Value not found: \(type)")
+                    print("  Context: \(context.debugDescription)")
+                case .keyNotFound(let key, let context):
+                    print("  Key not found: \(key.stringValue)")
+                    print("  Context: \(context.debugDescription)")
+                case .dataCorrupted(let context):
+                    print("  Data corrupted: \(context.debugDescription)")
+                @unknown default:
+                    print("  Unknown decoding error")
+                }
+            }
             return nil
         }
     }
