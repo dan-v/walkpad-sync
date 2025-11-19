@@ -15,6 +15,10 @@ CREATE TABLE IF NOT EXISTS workouts (
     avg_speed REAL, -- m/s
     max_speed REAL, -- m/s
     total_calories INTEGER,
+    avg_heart_rate REAL, -- bpm
+    max_heart_rate INTEGER, -- bpm
+    avg_incline REAL, -- percentage
+    max_incline REAL, -- percentage
 
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -31,6 +35,8 @@ CREATE TABLE IF NOT EXISTS workout_samples (
     distance INTEGER, -- cumulative meters
     calories INTEGER, -- cumulative
     cadence INTEGER, -- cumulative step count (repurposed from cadence/steps-per-minute)
+    heart_rate INTEGER, -- beats per minute
+    incline REAL, -- percentage
 
     FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 );

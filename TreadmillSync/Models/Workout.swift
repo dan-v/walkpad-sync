@@ -47,6 +47,10 @@ struct Workout: Codable, Identifiable {
     let avgSpeed: Double?
     let maxSpeed: Double?
     let totalCalories: Int64?
+    let avgHeartRate: Double?
+    let maxHeartRate: Int64?
+    let avgIncline: Double?
+    let maxIncline: Double?
     let samplesUrl: String
 
     enum CodingKeys: String, CodingKey {
@@ -60,6 +64,10 @@ struct Workout: Codable, Identifiable {
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
         case totalCalories = "total_calories"
+        case avgHeartRate = "avg_heart_rate"
+        case maxHeartRate = "max_heart_rate"
+        case avgIncline = "avg_incline"
+        case maxIncline = "max_incline"
         case samplesUrl = "samples_url"
     }
 
@@ -115,6 +123,8 @@ struct WorkoutSample: Codable, Identifiable {
     let distance: Int64?
     let calories: Int64?
     let steps: Int64? // cumulative step count
+    let heartRate: Int64?
+    let incline: Double?
 
     enum CodingKeys: String, CodingKey {
         case timestamp
@@ -122,6 +132,8 @@ struct WorkoutSample: Codable, Identifiable {
         case distance
         case calories
         case steps = "cadence" // Backend uses 'cadence' column for steps
+        case heartRate = "heart_rate"
+        case incline
     }
 
     var date: Date? {

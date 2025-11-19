@@ -4,17 +4,20 @@ struct WorkoutListView: View {
     @EnvironmentObject var syncManager: SyncManager
 
     @State private var liveWorkout: LiveWorkoutResponse?
-    @State private var liveWorkoutTimer: Timer?
+    @State private var pollingTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
-                // Live Workout Banner
-                if let liveWorkout = liveWorkout {
-                    LiveWorkoutBanner(liveData: liveWorkout)
-                        .padding(.horizontal)
-                        .padding(.top, 8)
-                        .padding(.bottom, 4)
+                // Live Workout Banner (tappable)
+                if let liveWorkout = liveWorkout, let workout = liveWorkout.workout {
+                    NavigationLink(destination: LiveWorkoutDetailView(liveData: liveWorkout)) {
+                        LiveWorkoutBanner(liveData: liveWorkout)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal)
+                    .padding(.top, 8)
+                    .padding(.bottom, 4)
                 }
 
                 // Workout List
@@ -87,32 +90,40 @@ struct WorkoutListView: View {
     // MARK: - Live Workout Polling
 
     private func startLiveWorkoutPolling() {
-        // Fetch immediately
-        fetchLiveWorkout()
+        // Cancel any existing task
+        pollingTask?.cancel()
 
-        // Then poll every 2 seconds
-        liveWorkoutTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            fetchLiveWorkout()
+        // Start new polling task
+        pollingTask = Task {
+            while !Task.isCancelled {
+                await fetchLiveWorkout()
+
+                // Only continue polling if there's an active workout
+                if liveWorkout == nil {
+                    // If no active workout, check less frequently (every 5 seconds)
+                    try? await Task.sleep(nanoseconds: 5_000_000_000)
+                } else {
+                    // Active workout - poll every 2 seconds
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                }
+            }
         }
     }
 
     private func stopLiveWorkoutPolling() {
-        liveWorkoutTimer?.invalidate()
-        liveWorkoutTimer = nil
+        pollingTask?.cancel()
+        pollingTask = nil
+        liveWorkout = nil
     }
 
-    private func fetchLiveWorkout() {
+    private func fetchLiveWorkout() async {
         guard syncManager.isConnected else {
             liveWorkout = nil
             return
         }
 
-        Task {
-            let data = await syncManager.fetchLiveWorkout()
-            await MainActor.run {
-                liveWorkout = data
-            }
-        }
+        let data = await syncManager.fetchLiveWorkout()
+        liveWorkout = data
     }
 
     // Group workouts by date

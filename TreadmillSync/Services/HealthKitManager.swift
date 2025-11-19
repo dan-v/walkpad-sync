@@ -14,6 +14,9 @@ class HealthKitManager: ObservableObject {
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(energyType)
         }
+        if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+            types.insert(stepType)
+        }
 
         return types
     }()
@@ -94,6 +97,19 @@ class HealthKitManager: ObservableObject {
                     end: sampleDate
                 )
                 workoutSamples.append(energySample)
+            }
+
+            // Step count samples (cumulative)
+            if let steps = sample.steps, steps > 0,
+               let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+                let stepQuantity = HKQuantity(unit: .count(), doubleValue: Double(steps))
+                let stepSample = HKQuantitySample(
+                    type: stepType,
+                    quantity: stepQuantity,
+                    start: sampleDate,
+                    end: sampleDate
+                )
+                workoutSamples.append(stepSample)
             }
         }
 
