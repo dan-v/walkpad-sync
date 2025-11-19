@@ -52,6 +52,7 @@ pub struct BluetoothManager {
 #[derive(Debug, Clone)]
 struct WorkoutBaseline {
     start_distance: Option<u32>,
+    start_steps: Option<u16>,
     start_calories: Option<u16>,
 }
 
@@ -297,6 +298,9 @@ impl BluetoothManager {
                                 if partial_data.distance.is_some() {
                                     acc.distance = partial_data.distance;
                                 }
+                                if partial_data.steps.is_some() {
+                                    acc.steps = partial_data.steps;
+                                }
                                 if partial_data.total_energy.is_some() {
                                     acc.total_energy = partial_data.total_energy;
                                 }
@@ -415,10 +419,11 @@ impl BluetoothManager {
                                     let mut baseline = self.workout_baseline.write().await;
                                     *baseline = Some(WorkoutBaseline {
                                         start_distance: data.distance,
+                                        start_steps: data.steps,
                                         start_calories: data.total_energy,
                                     });
-                                    info!("New workout baseline after reset: distance={:?}m, calories={:?}kcal",
-                                          data.distance, data.total_energy);
+                                    info!("New workout baseline after reset: distance={:?}m, steps={:?}, calories={:?}kcal",
+                                          data.distance, data.steps, data.total_energy);
                                 }
                             } else {
                                 debug!("Reset detection count: {}/3", reset_detection_count);
@@ -448,10 +453,11 @@ impl BluetoothManager {
                         let mut baseline = self.workout_baseline.write().await;
                         *baseline = Some(WorkoutBaseline {
                             start_distance: data.distance,
+                            start_steps: data.steps,
                             start_calories: data.total_energy,
                         });
-                        info!("Workout baseline: distance={:?}m, calories={:?}kcal",
-                              data.distance, data.total_energy);
+                        info!("Workout baseline: distance={:?}m, steps={:?}, calories={:?}kcal",
+                              data.distance, data.steps, data.total_energy);
                     }
 
                     // Record sample if workout is active
@@ -607,8 +613,12 @@ impl BluetoothManager {
 
             // Calculate deltas from workout baseline
             let baseline = self.workout_baseline.read().await;
-            let (delta_distance, delta_calories) = if let Some(ref baseline) = *baseline {
+            let (delta_distance, delta_steps, delta_calories) = if let Some(ref baseline) = *baseline {
                 let delta_dist = match (data.distance, baseline.start_distance) {
+                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    _ => None,
+                };
+                let delta_step = match (data.steps, baseline.start_steps) {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
@@ -616,10 +626,14 @@ impl BluetoothManager {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
-                (delta_dist, delta_cal)
+                (delta_dist, delta_step, delta_cal)
             } else {
                 // No baseline yet - store raw values (shouldn't happen normally)
-                (data.distance.map(|d| d as i64), data.total_energy.map(|e| e as i64))
+                (
+                    data.distance.map(|d| d as i64),
+                    data.steps.map(|s| s as i64),
+                    data.total_energy.map(|e| e as i64)
+                )
             };
 
             self.storage.add_sample(
@@ -630,7 +644,7 @@ impl BluetoothManager {
                 delta_distance,
                 data.heart_rate.map(|hr| hr as i64),
                 delta_calories,
-                None, // cadence not available from treadmill
+                delta_steps, // cumulative step count from workout start
             ).await?;
         }
 

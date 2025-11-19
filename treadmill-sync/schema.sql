@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS workout_samples (
     distance INTEGER, -- cumulative meters
     heart_rate INTEGER,
     calories INTEGER, -- cumulative
-    cadence INTEGER, -- steps per minute
+    cadence INTEGER, -- cumulative step count (repurposed from cadence/steps-per-minute)
 
     FOREIGN KEY (workout_id) REFERENCES workouts(id) ON DELETE CASCADE
 );
