@@ -163,19 +163,6 @@ struct WorkoutRow: View {
             }
             .font(.subheadline)
             .foregroundColor(.secondary)
-
-            if let avgHR = workout.avgHeartRate, let maxHR = workout.maxHeartRate {
-                HStack(spacing: 8) {
-                    Image(systemName: "heart.fill")
-                        .foregroundColor(.red)
-                        .font(.caption)
-                    Text("Avg: \(avgHR) bpm")
-                    Text("•")
-                    Text("Max: \(maxHR) bpm")
-                }
-                .font(.caption)
-                .foregroundColor(.secondary)
-            }
         }
         .padding(.vertical, 4)
     }

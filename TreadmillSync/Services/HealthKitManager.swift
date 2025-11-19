@@ -14,9 +14,6 @@ class HealthKitManager: ObservableObject {
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
             types.insert(energyType)
         }
-        if let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
-            types.insert(heartRateType)
-        }
 
         return types
     }()
@@ -67,24 +64,11 @@ class HealthKitManager: ObservableObject {
             throw error
         }
 
-        // Create workout samples (heart rate, distance points, etc.)
+        // Create workout samples (distance points, energy, etc.)
         var workoutSamples: [HKSample] = []
 
         for sample in samples {
             guard let sampleDate = sample.date else { continue }
-
-            // Heart rate samples
-            if let hr = sample.heartRate, hr > 0,
-               let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
-                let hrQuantity = HKQuantity(unit: HKUnit.count().unitDivided(by: .minute()), doubleValue: Double(hr))
-                let hrSample = HKQuantitySample(
-                    type: heartRateType,
-                    quantity: hrQuantity,
-                    start: sampleDate,
-                    end: sampleDate
-                )
-                workoutSamples.append(hrSample)
-            }
 
             // Distance samples (cumulative)
             if let distance = sample.distance, distance > 0,

@@ -33,11 +33,9 @@ pub enum ConnectionStatus {
 #[derive(Debug, Clone)]
 pub struct WorkoutMetrics {
     pub speed: Option<f64>,
-    pub incline: Option<f64>,
     pub distance: Option<u32>,
     pub steps: Option<u16>,
     pub calories: Option<u16>,
-    pub heart_rate: Option<u8>,
     #[allow(dead_code)]
     pub elapsed_time: Option<u16>,
 }
@@ -653,9 +651,7 @@ impl BluetoothManager {
                 workout_id,
                 timestamp,
                 data.speed,
-                data.incline,
                 delta_distance,
-                data.heart_rate.map(|hr| hr as i64),
                 delta_calories,
                 delta_steps, // cumulative step count from workout start
             ).await?;
@@ -751,13 +747,10 @@ impl BluetoothManager {
                 end_time,
                 duration,
                 agg.total_distance,
+                agg.total_steps,
                 agg.avg_speed,
                 agg.max_speed,
-                agg.avg_incline,
-                agg.max_incline,
                 agg.total_calories,
-                agg.avg_heart_rate,
-                agg.max_heart_rate,
             ).await {
                 error!("Failed to complete workout {}: {}", workout_id, e);
                 self.storage.mark_workout_failed(workout_id, &format!("DB error: {}", e)).await?;
@@ -768,13 +761,10 @@ impl BluetoothManager {
             info!("Workout {} completed successfully:", workout_id);
             info!("  Duration: {}:{:02} ({} seconds)", duration / 60, duration % 60, duration);
             info!("  Distance: {} meters ({:.2} km)", agg.total_distance, agg.total_distance as f64 / 1000.0);
+            info!("  Steps: {}", agg.total_steps);
             info!("  Avg Speed: {:.2} m/s ({:.2} km/h)", agg.avg_speed, agg.avg_speed * 3.6);
             info!("  Max Speed: {:.2} m/s ({:.2} km/h)", agg.max_speed, agg.max_speed * 3.6);
-            info!("  Avg Incline: {:.1}% (Max: {:.1}%)", agg.avg_incline, agg.max_incline);
             info!("  Calories: {} kcal", agg.total_calories);
-            if let Some(avg_hr) = agg.avg_heart_rate {
-                info!("  Heart Rate: {} avg / {} max bpm", avg_hr, agg.max_heart_rate.unwrap_or(0));
-            }
             info!("  Samples: {}", agg.sample_count);
         }
 
@@ -804,11 +794,9 @@ impl BluetoothManager {
 
                 return Ok(Some(WorkoutMetrics {
                     speed: last_sample.speed,
-                    incline: last_sample.incline,
                     distance: last_sample.distance.map(|d| d as u32),
                     steps: last_sample.cadence.map(|s| s as u16), // cadence column stores steps
                     calories: last_sample.calories.map(|c| c as u16),
-                    heart_rate: last_sample.heart_rate.map(|hr| hr as u8),
                     elapsed_time,
                 }));
             }

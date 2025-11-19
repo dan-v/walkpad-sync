@@ -107,13 +107,10 @@ struct WorkoutResponse {
     end_time: Option<String>,
     total_duration: Option<i64>,
     total_distance: Option<i64>,
+    total_steps: Option<i64>,
     avg_speed: Option<f64>,
     max_speed: Option<f64>,
-    avg_incline: Option<f64>,
-    max_incline: Option<f64>,
     total_calories: Option<i64>,
-    avg_heart_rate: Option<i64>,
-    max_heart_rate: Option<i64>,
     samples_url: String,
 }
 
@@ -126,13 +123,10 @@ impl From<Workout> for WorkoutResponse {
             end_time: w.end_time,
             total_duration: w.total_duration,
             total_distance: w.total_distance,
+            total_steps: w.total_steps,
             avg_speed: w.avg_speed,
             max_speed: w.max_speed,
-            avg_incline: w.avg_incline,
-            max_incline: w.max_incline,
             total_calories: w.total_calories,
-            avg_heart_rate: w.avg_heart_rate,
-            max_heart_rate: w.max_heart_rate,
             samples_url: format!("/api/workouts/{}/samples", w.id),
         }
     }
@@ -183,9 +177,7 @@ struct SamplesResponse {
 struct SampleResponse {
     timestamp: String,
     speed: Option<f64>,
-    incline: Option<f64>,
     distance: Option<i64>,
-    heart_rate: Option<i64>,
     calories: Option<i64>,
     cadence: Option<i64>,
 }
@@ -195,9 +187,7 @@ impl From<WorkoutSample> for SampleResponse {
         Self {
             timestamp: s.timestamp,
             speed: s.speed,
-            incline: s.incline,
             distance: s.distance,
-            heart_rate: s.heart_rate,
             calories: s.calories,
             cadence: s.cadence,
         }
@@ -288,11 +278,9 @@ struct LiveWorkoutResponse {
 #[derive(Debug, Serialize)]
 struct CurrentMetrics {
     current_speed: Option<f64>,
-    current_incline: Option<f64>,
     distance_so_far: Option<u32>,
     steps_so_far: Option<u16>,
     calories_so_far: Option<u16>,
-    heart_rate: Option<u8>,
 }
 
 async fn get_live_workout(
@@ -304,11 +292,9 @@ async fn get_live_workout(
     let workout = current_workout.map(WorkoutResponse::from);
     let metrics = current_metrics.map(|m| CurrentMetrics {
         current_speed: m.speed,
-        current_incline: m.incline,
         distance_so_far: m.distance,
         steps_so_far: m.steps,
         calories_so_far: m.calories,
-        heart_rate: m.heart_rate,
     });
 
     Ok(Json(LiveWorkoutResponse {
@@ -330,9 +316,7 @@ struct DebugLiveResponse {
 struct DebugSampleResponse {
     timestamp: String,
     speed: Option<f64>,
-    incline: Option<f64>,
     distance: Option<i64>,
-    heart_rate: Option<i64>,
     calories: Option<i64>,
     cadence: Option<i64>,
 }
@@ -342,9 +326,7 @@ impl From<WorkoutSample> for DebugSampleResponse {
         Self {
             timestamp: s.timestamp,
             speed: s.speed,
-            incline: s.incline,
             distance: s.distance,
-            heart_rate: s.heart_rate,
             calories: s.calories,
             cadence: s.cadence,
         }
@@ -378,11 +360,9 @@ async fn get_debug_live(
     let workout = current_workout.map(WorkoutResponse::from);
     let metrics = current_metrics.map(|m| CurrentMetrics {
         current_speed: m.speed,
-        current_incline: m.incline,
         distance_so_far: m.distance,
         steps_so_far: m.steps,
         calories_so_far: m.calories,
-        heart_rate: m.heart_rate,
     });
 
     Ok(Json(DebugLiveResponse {
