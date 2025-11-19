@@ -213,6 +213,31 @@ impl Storage {
         Ok(sample)
     }
 
+    /// Get the most recent N samples for a workout (efficient for live view)
+    pub async fn get_recent_samples(&self, workout_id: i64, limit: i64) -> Result<Vec<WorkoutSample>> {
+        let samples = sqlx::query_as::<_, WorkoutSample>(
+            "SELECT * FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT ?"
+        )
+        .bind(workout_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await?;
+
+        // Reverse to get chronological order (oldest to newest)
+        Ok(samples.into_iter().rev().collect())
+    }
+
+    pub async fn get_sample_count(&self, workout_id: i64) -> Result<i64> {
+        let row = sqlx::query(
+            "SELECT COUNT(*) as count FROM workout_samples WHERE workout_id = ?"
+        )
+        .bind(workout_id)
+        .fetch_one(&self.pool)
+        .await?;
+
+        Ok(row.get("count"))
+    }
+
     pub async fn get_first_sample_timestamp(&self, workout_id: i64) -> Result<Option<String>> {
         let row = sqlx::query(
             "SELECT timestamp FROM workout_samples WHERE workout_id = ? ORDER BY timestamp ASC LIMIT 1"
@@ -298,10 +323,10 @@ impl Storage {
             r#"
             SELECT
                 COUNT(*) as count,
-                MAX(distance) as max_distance,
-                MAX(cadence) as max_steps,
-                MAX(calories) as max_calories,
-                AVG(CASE WHEN speed > 0 THEN speed END) as avg_speed,
+                (SELECT distance FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_distance,
+                (SELECT cadence FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_steps,
+                (SELECT calories FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_calories,
+                AVG(speed) as avg_speed,
                 MAX(speed) as max_speed,
                 MIN(timestamp) as first_timestamp,
                 MAX(timestamp) as last_timestamp
@@ -310,14 +335,17 @@ impl Storage {
             "#
         )
         .bind(workout_id)
+        .bind(workout_id)
+        .bind(workout_id)
+        .bind(workout_id)
         .fetch_one(&self.pool)
         .await?;
 
         Ok(WorkoutAggregates {
             sample_count: row.get::<i64, _>("count") as usize,
-            total_distance: row.get::<Option<i64>, _>("max_distance").unwrap_or(0),
-            total_steps: row.get::<Option<i64>, _>("max_steps").unwrap_or(0),
-            total_calories: row.get::<Option<i64>, _>("max_calories").unwrap_or(0),
+            total_distance: row.get::<Option<i64>, _>("total_distance").unwrap_or(0),
+            total_steps: row.get::<Option<i64>, _>("total_steps").unwrap_or(0),
+            total_calories: row.get::<Option<i64>, _>("total_calories").unwrap_or(0),
             avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
             max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
             first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
