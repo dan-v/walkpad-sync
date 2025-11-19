@@ -639,16 +639,40 @@ impl BluetoothManager {
             // Calculate deltas from workout baseline
             let baseline = self.workout_baseline.read().await;
             let (delta_distance, delta_steps, delta_calories) = if let Some(ref baseline) = *baseline {
+                // For LifeSpan treadmill: distance and calories use u8 counters (0-255)
+                // If current < baseline, counter wrapped - add 256 to account for wrap
+                // NOTE: This handles single wraparound. Multiple wraps (>2.55mi or >255kcal)
+                // in one workout would need more complex tracking.
+
                 let delta_dist = match (data.distance, baseline.start_distance) {
-                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    (Some(curr), Some(start)) => {
+                        if curr < start && (start - curr) > 1000 {
+                            // Wraparound detected (distance counter wraps at 255 hundredths = 4105m)
+                            // Add 4105m (256 hundredths * 1609.34 / 100) to current before subtracting baseline
+                            debug!("Distance wraparound detected: curr={}m < start={}m, adding 4105m", curr, start);
+                            Some((curr + 4105).saturating_sub(start) as i64)
+                        } else {
+                            Some(curr.saturating_sub(start) as i64)
+                        }
+                    }
                     _ => None,
                 };
+
                 let delta_step = match (data.steps, baseline.start_steps) {
                     (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
                     _ => None,
                 };
+
                 let delta_cal = match (data.total_energy, baseline.start_calories) {
-                    (Some(curr), Some(start)) => Some(curr.saturating_sub(start) as i64),
+                    (Some(curr), Some(start)) => {
+                        if curr < start && (start - curr) > 200 {
+                            // Wraparound detected (calories counter wraps at 255)
+                            debug!("Calories wraparound detected: curr={} < start={}, adding 256", curr, start);
+                            Some(((curr + 256) as i64).saturating_sub(start as i64))
+                        } else {
+                            Some(curr.saturating_sub(start) as i64)
+                        }
+                    }
                     _ => None,
                 };
                 (delta_dist, delta_step, delta_cal)
