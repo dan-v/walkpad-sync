@@ -654,8 +654,6 @@ impl BluetoothManager {
                 delta_distance,
                 delta_calories,
                 delta_steps, // cumulative step count from workout start
-                data.heart_rate.map(|h| h as i64),
-                data.incline,
             ).await?;
         }
 
@@ -753,10 +751,6 @@ impl BluetoothManager {
                 agg.avg_speed,
                 agg.max_speed,
                 agg.total_calories,
-                agg.avg_heart_rate,
-                agg.max_heart_rate,
-                agg.avg_incline,
-                agg.max_incline,
             ).await {
                 error!("Failed to complete workout {}: {}", workout_id, e);
                 self.storage.mark_workout_failed(workout_id, &format!("DB error: {}", e)).await?;
@@ -771,18 +765,6 @@ impl BluetoothManager {
             info!("  Avg Speed: {:.2} m/s ({:.2} km/h)", agg.avg_speed, agg.avg_speed * 3.6);
             info!("  Max Speed: {:.2} m/s ({:.2} km/h)", agg.max_speed, agg.max_speed * 3.6);
             info!("  Calories: {} kcal", agg.total_calories);
-            if let Some(avg_hr) = agg.avg_heart_rate {
-                info!("  Avg Heart Rate: {:.1} bpm", avg_hr);
-            }
-            if let Some(max_hr) = agg.max_heart_rate {
-                info!("  Max Heart Rate: {} bpm", max_hr);
-            }
-            if let Some(avg_inc) = agg.avg_incline {
-                info!("  Avg Incline: {:.1}%", avg_inc);
-            }
-            if let Some(max_inc) = agg.max_incline {
-                info!("  Max Incline: {:.1}%", max_inc);
-            }
             info!("  Samples: {}", agg.sample_count);
         }
 

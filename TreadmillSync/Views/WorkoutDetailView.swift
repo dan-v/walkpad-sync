@@ -74,42 +74,6 @@ struct WorkoutDetailView: View {
                             color: .cyan
                         )
                     }
-
-                    if let avgHR = workout.avgHeartRate {
-                        StatCard(
-                            icon: "heart.fill",
-                            label: "Avg Heart Rate",
-                            value: String(format: "%.0f bpm", avgHR),
-                            color: .pink
-                        )
-                    }
-
-                    if let maxHR = workout.maxHeartRate {
-                        StatCard(
-                            icon: "bolt.heart.fill",
-                            label: "Max Heart Rate",
-                            value: "\(maxHR) bpm",
-                            color: .pink
-                        )
-                    }
-
-                    if let avgIncline = workout.avgIncline {
-                        StatCard(
-                            icon: "mountain.2.fill",
-                            label: "Avg Incline",
-                            value: String(format: "%.1f%%", avgIncline),
-                            color: .brown
-                        )
-                    }
-
-                    if let maxIncline = workout.maxIncline {
-                        StatCard(
-                            icon: "arrow.up.right",
-                            label: "Max Incline",
-                            value: String(format: "%.1f%%", maxIncline),
-                            color: .brown
-                        )
-                    }
                 }
                 .padding(.horizontal)
 
@@ -133,50 +97,6 @@ struct WorkoutDetailView: View {
                             }
                             .chartXAxis {
                                 AxisMarks(values: .automatic(desiredCount: 4))
-                            }
-                        }
-
-                        // Heart Rate Chart
-                        if samples.contains(where: { $0.heartRate != nil }) {
-                            ChartSection(title: "Heart Rate", icon: "heart.fill", color: .pink) {
-                                Chart(samples) { sample in
-                                    if let hr = sample.heartRate, hr > 0, let date = sample.date {
-                                        LineMark(
-                                            x: .value("Time", date),
-                                            y: .value("BPM", hr)
-                                        )
-                                        .foregroundStyle(.pink)
-                                        .interpolationMethod(.catmullRom)
-                                    }
-                                }
-                                .chartYAxis {
-                                    AxisMarks(position: .leading)
-                                }
-                                .chartXAxis {
-                                    AxisMarks(values: .automatic(desiredCount: 4))
-                                }
-                            }
-                        }
-
-                        // Incline Chart
-                        if samples.contains(where: { $0.incline != nil }) {
-                            ChartSection(title: "Incline", icon: "mountain.2.fill", color: .brown) {
-                                Chart(samples) { sample in
-                                    if let incline = sample.incline, let date = sample.date {
-                                        LineMark(
-                                            x: .value("Time", date),
-                                            y: .value("Incline %", incline)
-                                        )
-                                        .foregroundStyle(.brown)
-                                        .interpolationMethod(.catmullRom)
-                                    }
-                                }
-                                .chartYAxis {
-                                    AxisMarks(position: .leading)
-                                }
-                                .chartXAxis {
-                                    AxisMarks(values: .automatic(desiredCount: 4))
-                                }
                             }
                         }
                     }
@@ -356,10 +276,6 @@ struct StatCard: View {
             avgSpeed: 1.78,
             maxSpeed: 2.5,
             totalCalories: 250,
-            avgHeartRate: 135.0,
-            maxHeartRate: 165,
-            avgIncline: 2.5,
-            maxIncline: 5.0,
             samplesUrl: "/api/workouts/1/samples"
         ))
         .environmentObject(SyncManager())

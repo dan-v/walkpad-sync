@@ -215,10 +215,6 @@ struct LiveMetricCard: View {
                 avgSpeed: nil,
                 maxSpeed: nil,
                 totalCalories: nil,
-                avgHeartRate: nil,
-                maxHeartRate: nil,
-                avgIncline: nil,
-                maxIncline: nil,
                 samplesUrl: "/api/workouts/1/samples"
             ),
             currentMetrics: LiveWorkoutMetrics(

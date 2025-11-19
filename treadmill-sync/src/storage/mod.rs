@@ -21,10 +21,6 @@ pub struct Workout {
     pub avg_speed: Option<f64>,
     pub max_speed: Option<f64>,
     pub total_calories: Option<i64>,
-    pub avg_heart_rate: Option<f64>,
-    pub max_heart_rate: Option<i64>,
-    pub avg_incline: Option<f64>,
-    pub max_incline: Option<f64>,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -38,8 +34,6 @@ pub struct WorkoutSample {
     pub distance: Option<i64>,
     pub calories: Option<i64>,
     pub cadence: Option<i64>,
-    pub heart_rate: Option<i64>,
-    pub incline: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -104,10 +98,6 @@ impl Storage {
         avg_speed: f64,
         max_speed: f64,
         total_calories: i64,
-        avg_heart_rate: Option<f64>,
-        max_heart_rate: Option<i64>,
-        avg_incline: Option<f64>,
-        max_incline: Option<f64>,
     ) -> Result<()> {
         let end_time_str = end_time.to_rfc3339();
         let updated_at = Utc::now().to_rfc3339();
@@ -122,10 +112,6 @@ impl Storage {
                 avg_speed = ?,
                 max_speed = ?,
                 total_calories = ?,
-                avg_heart_rate = ?,
-                max_heart_rate = ?,
-                avg_incline = ?,
-                max_incline = ?,
                 updated_at = ?
              WHERE id = ?"
         )
@@ -136,10 +122,6 @@ impl Storage {
         .bind(avg_speed)
         .bind(max_speed)
         .bind(total_calories)
-        .bind(avg_heart_rate)
-        .bind(max_heart_rate)
-        .bind(avg_incline)
-        .bind(max_incline)
         .bind(&updated_at)
         .bind(workout_id)
         .execute(&self.pool)
@@ -189,15 +171,13 @@ impl Storage {
         distance: Option<i64>,
         calories: Option<i64>,
         cadence: Option<i64>,
-        heart_rate: Option<i64>,
-        incline: Option<f64>,
     ) -> Result<()> {
         let timestamp_str = timestamp.to_rfc3339();
 
         sqlx::query(
             "INSERT INTO workout_samples
-             (workout_id, timestamp, speed, distance, calories, cadence, heart_rate, incline)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+             (workout_id, timestamp, speed, distance, calories, cadence)
+             VALUES (?, ?, ?, ?, ?, ?)"
         )
         .bind(workout_id)
         .bind(&timestamp_str)
@@ -205,8 +185,6 @@ impl Storage {
         .bind(distance)
         .bind(calories)
         .bind(cadence)
-        .bind(heart_rate)
-        .bind(incline)
         .execute(&self.pool)
         .await?;
 
@@ -325,10 +303,6 @@ impl Storage {
                 MAX(calories) as max_calories,
                 AVG(CASE WHEN speed > 0 THEN speed END) as avg_speed,
                 MAX(speed) as max_speed,
-                AVG(CASE WHEN heart_rate > 0 THEN heart_rate END) as avg_heart_rate,
-                MAX(heart_rate) as max_heart_rate,
-                AVG(incline) as avg_incline,
-                MAX(incline) as max_incline,
                 MIN(timestamp) as first_timestamp,
                 MAX(timestamp) as last_timestamp
             FROM workout_samples
@@ -346,10 +320,6 @@ impl Storage {
             total_calories: row.get::<Option<i64>, _>("max_calories").unwrap_or(0),
             avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
             max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
-            avg_heart_rate: row.get::<Option<f64>, _>("avg_heart_rate"),
-            max_heart_rate: row.get::<Option<i64>, _>("max_heart_rate"),
-            avg_incline: row.get::<Option<f64>, _>("avg_incline"),
-            max_incline: row.get::<Option<f64>, _>("max_incline"),
             first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
             last_timestamp: row.get::<Option<String>, _>("last_timestamp"),
         })
@@ -364,10 +334,6 @@ pub struct WorkoutAggregates {
     pub total_calories: i64,
     pub avg_speed: f64,
     pub max_speed: f64,
-    pub avg_heart_rate: Option<f64>,
-    pub max_heart_rate: Option<i64>,
-    pub avg_incline: Option<f64>,
-    pub max_incline: Option<f64>,
     pub first_timestamp: Option<String>,
     pub last_timestamp: Option<String>,
 }
