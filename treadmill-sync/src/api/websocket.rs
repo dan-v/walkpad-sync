@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
-use super::AppState;
-use crate::storage::{Workout, WorkoutSample};
+use super::{AppState, WorkoutResponse};
+use crate::storage::WorkoutSample;
 
 // WebSocket events that can be broadcast to clients
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkoutEvent {
-    WorkoutStarted { workout: Workout },
+    WorkoutStarted { workout: WorkoutResponse },
     WorkoutSample { workout_id: i64, sample: WorkoutSample },
-    WorkoutCompleted { workout: Workout },
+    WorkoutCompleted { workout: WorkoutResponse },
     WorkoutFailed { workout_id: i64, reason: String },
     ConnectionStatus { connected: bool },
 }
@@ -57,7 +57,8 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                 match state.storage.get_workout(workout_id).await {
                     Ok(Some(workout)) => {
                         info!("  ✅ Found workout {}, sending WorkoutStarted event", workout_id);
-                        let event = WorkoutEvent::WorkoutStarted { workout };
+                        let workout_response = WorkoutResponse::from(workout);
+                        let event = WorkoutEvent::WorkoutStarted { workout: workout_response };
                         match serde_json::to_string(&event) {
                             Ok(msg) => {
                                 if let Err(e) = sender.send(Message::Text(msg)).await {

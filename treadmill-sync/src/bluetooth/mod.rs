@@ -13,7 +13,7 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::api::WorkoutEvent;
+use crate::api::{WorkoutEvent, WorkoutResponse};
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use ftms::{
@@ -637,7 +637,8 @@ impl BluetoothManager {
 
         // Fetch the created workout and emit event
         if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
-            let _ = self.event_tx.send(WorkoutEvent::WorkoutStarted { workout });
+            let workout_response = WorkoutResponse::from(workout);
+            let _ = self.event_tx.send(WorkoutEvent::WorkoutStarted { workout: workout_response });
         }
 
         Ok(())
@@ -835,7 +836,8 @@ impl BluetoothManager {
 
             // Fetch completed workout and emit success event
             if let Ok(Some(workout)) = self.storage.get_workout(workout_id).await {
-                let _ = self.event_tx.send(WorkoutEvent::WorkoutCompleted { workout });
+                let workout_response = WorkoutResponse::from(workout);
+                let _ = self.event_tx.send(WorkoutEvent::WorkoutCompleted { workout: workout_response });
             }
 
             // Log success
