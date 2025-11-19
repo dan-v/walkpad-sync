@@ -30,7 +30,7 @@ struct LiveWorkoutBanner: View {
                             .foregroundColor(.primary)
 
                         if let metrics = liveData.currentMetrics {
-                            HStack(spacing: 16) {
+                            HStack(spacing: 12) {
                                 HStack(spacing: 4) {
                                     Image(systemName: "speedometer")
                                         .font(.caption2)
@@ -45,6 +45,15 @@ struct LiveWorkoutBanner: View {
                                         .font(.caption2)
                                         .foregroundColor(.blue)
                                     Text("\(metrics.distanceFormatted) mi")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+
+                                HStack(spacing: 4) {
+                                    Image(systemName: "shoeprints.fill")
+                                        .font(.caption2)
+                                        .foregroundColor(.purple)
+                                    Text("\(metrics.stepsFormatted)")
                                         .font(.caption)
                                         .foregroundColor(.secondary)
                                 }

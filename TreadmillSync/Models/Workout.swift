@@ -122,7 +122,7 @@ struct WorkoutSample: Codable, Identifiable {
     let distance: Int64?
     let heartRate: Int64?
     let calories: Int64?
-    let cadence: Int64?
+    let steps: Int64? // cumulative step count
 
     enum CodingKeys: String, CodingKey {
         case timestamp
@@ -131,7 +131,7 @@ struct WorkoutSample: Codable, Identifiable {
         case distance
         case heartRate = "heart_rate"
         case calories
-        case cadence
+        case steps = "cadence" // Backend uses 'cadence' column for steps
     }
 
     var date: Date? {
@@ -177,6 +177,7 @@ struct LiveWorkoutMetrics: Codable {
     let currentSpeed: Double?
     let currentIncline: Double?
     let distanceSoFar: Int64?
+    let stepsSoFar: Int64?
     let caloriesSoFar: Int64?
     let heartRate: Int64?
 
@@ -184,6 +185,7 @@ struct LiveWorkoutMetrics: Codable {
         case currentSpeed = "current_speed"
         case currentIncline = "current_incline"
         case distanceSoFar = "distance_so_far"
+        case stepsSoFar = "steps_so_far"
         case caloriesSoFar = "calories_so_far"
         case heartRate = "heart_rate"
     }
@@ -198,6 +200,11 @@ struct LiveWorkoutMetrics: Codable {
         guard let meters = distanceSoFar else { return "0.00" }
         let miles = Double(meters) / 1609.34
         return String(format: "%.2f", miles)
+    }
+
+    var stepsFormatted: String {
+        guard let steps = stepsSoFar else { return "0" }
+        return "\(steps)"
     }
 
     var caloriesFormatted: String {
