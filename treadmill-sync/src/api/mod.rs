@@ -290,6 +290,7 @@ struct CurrentMetrics {
     current_speed: Option<f64>,
     current_incline: Option<f64>,
     distance_so_far: Option<u32>,
+    steps_so_far: Option<u16>,
     calories_so_far: Option<u16>,
     heart_rate: Option<u8>,
 }
@@ -305,6 +306,7 @@ async fn get_live_workout(
         current_speed: m.speed,
         current_incline: m.incline,
         distance_so_far: m.distance,
+        steps_so_far: m.steps,
         calories_so_far: m.calories,
         heart_rate: m.heart_rate,
     });
@@ -378,6 +380,7 @@ async fn get_debug_live(
         current_speed: m.speed,
         current_incline: m.incline,
         distance_so_far: m.distance,
+        steps_so_far: m.steps,
         calories_so_far: m.calories,
         heart_rate: m.heart_rate,
     });

@@ -85,9 +85,8 @@ struct LiveWorkoutBanner: View {
             // Expanded details
             if isExpanded, let metrics = liveData.currentMetrics {
                 VStack(spacing: 16) {
-                    // Metrics grid
+                    // Metrics grid (2x2)
                     LazyVGrid(columns: [
-                        GridItem(.flexible()),
                         GridItem(.flexible()),
                         GridItem(.flexible())
                     ], spacing: 16) {
@@ -105,6 +104,14 @@ struct LiveWorkoutBanner: View {
                             value: metrics.distanceFormatted,
                             unit: "mi",
                             color: .green
+                        )
+
+                        MetricCard(
+                            icon: "shoeprints.fill",
+                            label: "Steps",
+                            value: metrics.stepsFormatted,
+                            unit: "",
+                            color: .purple
                         )
 
                         MetricCard(

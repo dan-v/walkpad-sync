@@ -35,6 +35,7 @@ pub struct WorkoutMetrics {
     pub speed: Option<f64>,
     pub incline: Option<f64>,
     pub distance: Option<u32>,
+    pub steps: Option<u16>,
     pub calories: Option<u16>,
     pub heart_rate: Option<u8>,
     #[allow(dead_code)]
@@ -793,6 +794,7 @@ impl BluetoothManager {
                     speed: last_sample.speed,
                     incline: last_sample.incline,
                     distance: last_sample.distance.map(|d| d as u32),
+                    steps: last_sample.cadence.map(|s| s as u16), // cadence column stores steps
                     calories: last_sample.calories.map(|c| c as u16),
                     heart_rate: last_sample.heart_rate.map(|hr| hr as u8),
                     elapsed_time,
