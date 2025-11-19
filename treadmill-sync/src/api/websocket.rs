@@ -7,9 +7,8 @@ use axum::{
 };
 use futures_util::{sink::SinkExt, stream::StreamExt};
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::AppState;
 use crate::storage::{Workout, WorkoutSample};
@@ -87,7 +86,7 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
                     info!("📡 WebSocket client disconnected");
                     break;
                 }
-                Message::Ping(data) => {
+                Message::Ping(_data) => {
                     // Echo back pong
                     // (sender is moved, can't respond here - axum handles this automatically)
                 }

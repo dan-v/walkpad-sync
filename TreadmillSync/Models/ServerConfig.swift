@@ -6,7 +6,7 @@ struct ServerConfig: Codable {
     var useHTTPS: Bool
 
     static let `default` = ServerConfig(
-        host: "raspberrypi.local",
+        host: "localhost",
         port: 8080,
         useHTTPS: false
     )

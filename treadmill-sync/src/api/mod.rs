@@ -346,15 +346,13 @@ async fn get_debug_live(
     let current_metrics = state.bluetooth.get_current_metrics().await?;
 
     let (recent_samples, sample_count) = if let Some(ref workout) = current_workout {
-        let all_samples = state.storage.get_samples(workout.id).await?;
-        let count = all_samples.len();
+        // Efficiently fetch only the recent samples and count (no need to load all samples)
+        let recent_samples = state.storage.get_recent_samples(workout.id, 20).await?;
+        let count = state.storage.get_sample_count(workout.id).await? as usize;
 
-        // Get last 20 samples for debugging
-        let recent: Vec<DebugSampleResponse> = all_samples
+        // Convert to response format
+        let recent: Vec<DebugSampleResponse> = recent_samples
             .into_iter()
-            .rev()
-            .take(20)
-            .rev()
             .map(DebugSampleResponse::from)
             .collect();
 

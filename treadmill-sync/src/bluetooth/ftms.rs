@@ -1,5 +1,5 @@
 use anyhow::{anyhow, Result};
-use tracing::debug;
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 // FTMS Service and Characteristic UUIDs (Standard Protocol)
@@ -14,6 +14,7 @@ pub const FITNESS_MACHINE_CONTROL_POINT_UUID: Uuid = Uuid::from_u128(0x00002AD9_
 pub const FITNESS_MACHINE_STATUS_UUID: Uuid = Uuid::from_u128(0x00002ADA_0000_1000_8000_00805F9B34FB);
 
 // LifeSpan Proprietary Protocol UUIDs
+#[allow(dead_code)]
 pub const LIFESPAN_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000FFF0_0000_1000_8000_00805F9B34FB);
 pub const LIFESPAN_DATA_UUID: Uuid = Uuid::from_u128(0x0000FFF1_0000_1000_8000_00805F9B34FB);
 #[allow(dead_code)]
@@ -67,7 +68,7 @@ pub struct TreadmillData {
     pub total_energy: Option<u16>,    // kcal
     pub energy_per_hour: Option<u16>, // kcal/hour
     pub heart_rate: Option<u8>,       // bpm
-    pub elapsed_time: Option<u16>,    // seconds
+    pub elapsed_time: Option<u32>,    // seconds (changed from u16 to support long workouts)
     pub remaining_time: Option<u16>,  // seconds
     pub force_on_belt: Option<i16>,   // newtons
     pub power_output: Option<i16>,    // watts
@@ -199,7 +200,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             return Err(anyhow!("Not enough data for elapsed time"));
         }
         let elapsed = u16::from_le_bytes([data[offset], data[offset + 1]]);
-        result.elapsed_time = Some(elapsed);
+        result.elapsed_time = Some(elapsed as u32);
         debug!("FTMS ELAPSED TIME: {} seconds", elapsed);
         offset += 2;
     }
@@ -312,12 +313,14 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Convert mph to m/s (1 mph = 0.44704 m/s)
             let speed_ms = speed_mph * 0.44704;
 
-            // Validate: speed should be reasonable (0-10 mph for walking)
-            if speed_mph >= 0.0 && speed_mph <= 10.0 {
+            // Validate: speed should be reasonable (0-5 mph for walking pads)
+            if speed_mph >= 0.0 && speed_mph <= 5.0 {
                 result.speed = Some(speed_ms);
                 debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
-            } else {
-                debug!("Invalid speed: {:.2} mph", speed_mph);
+            } else if speed_mph > 5.0 {
+                warn!("Walking pad speed {:.2} mph exceeds max (5 mph) - possible data corruption, but recording anyway", speed_mph);
+                // Still record it - don't silently discard potentially valid data
+                result.speed = Some(speed_ms);
             }
         }
 
@@ -377,11 +380,9 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 
                 // Validate
                 if hours < 24 && minutes < 60 && seconds < 60 {
-                    // Use u32 for calculation to prevent overflow (23 * 3600 = 82,800 exceeds u16 max of 65,535)
+                    // Use u32 for calculation and storage to support long workouts
                     let total_seconds = hours * 3600 + minutes * 60 + seconds;
-                    // Safe to cast: max value is 23*3600 + 59*60 + 59 = 86,399 which fits in u16 is false,
-                    // but typical workouts are < 18 hours (65,535 seconds). Clamp to u16::MAX if needed.
-                    result.elapsed_time = Some(total_seconds.min(u16::MAX as u32) as u16);
+                    result.elapsed_time = Some(total_seconds);
                     debug!("LifeSpan time: {}h {}m {}s = {} seconds", hours, minutes, seconds, total_seconds);
                 } else {
                     debug!("Invalid time: {}:{}:{}", hours, minutes, seconds);

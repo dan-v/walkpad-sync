@@ -39,7 +39,7 @@ pub struct WorkoutMetrics {
     pub steps: Option<u16>,
     pub calories: Option<u16>,
     #[allow(dead_code)]
-    pub elapsed_time: Option<u16>,
+    pub elapsed_time: Option<u32>,  // Changed from u16 to support long workouts (>18 hours)
 }
 
 pub struct BluetoothManager {
@@ -494,12 +494,12 @@ impl BluetoothManager {
 
                         // Detect workout end (no activity for sustained period)
                         // Check if distance or calories have changed since last sample
-                        let distance_changed = match (data.distance, last_distance) {
+                        let _distance_changed = match (data.distance, last_distance) {
                             (Some(curr), Some(prev)) => curr != prev,
                             _ => false,
                         };
 
-                        let calories_changed = match (data.total_energy, last_calories) {
+                        let _calories_changed = match (data.total_energy, last_calories) {
                             (Some(curr), Some(prev)) => curr != prev,
                             _ => false,
                         };
@@ -829,7 +829,7 @@ impl BluetoothManager {
                         chrono::DateTime::parse_from_rfc3339(&first_timestamp),
                         chrono::DateTime::parse_from_rfc3339(&last_sample.timestamp)
                     ) {
-                        (Ok(first), Ok(last)) => Some((last - first).num_seconds() as u16),
+                        (Ok(first), Ok(last)) => Some((last - first).num_seconds() as u32),
                         _ => None,
                     }
                 } else {
