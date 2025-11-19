@@ -1,18 +1,20 @@
 import SwiftUI
+import Combine
 
 struct WorkoutListView: View {
     @EnvironmentObject var syncManager: SyncManager
 
-    @State private var liveWorkout: LiveWorkoutResponse?
-    @State private var pollingTask: Task<Void, Never>?
+    @State private var liveWorkoutData: LiveWorkoutResponse?
+    @State private var updateTask: Task<Void, Never>?
+    @State private var cancellables = Set<AnyCancellable>()
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 // Live Workout Banner (tappable)
-                if let liveWorkout = liveWorkout, let workout = liveWorkout.workout {
-                    NavigationLink(destination: LiveWorkoutDetailView(liveData: liveWorkout)) {
-                        LiveWorkoutBanner(liveData: liveWorkout)
+                if let liveData = liveWorkoutData, liveData.workout != nil {
+                    NavigationLink(destination: LiveWorkoutDetailView(liveData: liveData)) {
+                        LiveWorkoutBanner(liveData: liveData)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal)
@@ -79,51 +81,63 @@ struct WorkoutListView: View {
                 Text(syncManager.syncSuccessMessage ?? "")
             }
             .onAppear {
-                startLiveWorkoutPolling()
+                setupLiveWorkoutUpdates()
             }
             .onDisappear {
-                stopLiveWorkoutPolling()
+                updateTask?.cancel()
+                cancellables.removeAll()
             }
         }
     }
 
-    // MARK: - Live Workout Polling
+    // MARK: - Live Workout via WebSocket
 
-    private func startLiveWorkoutPolling() {
-        // Cancel any existing task
-        pollingTask?.cancel()
-
-        // Start new polling task
-        pollingTask = Task {
-            while !Task.isCancelled {
-                await fetchLiveWorkout()
-
-                // Only continue polling if there's an active workout
-                if liveWorkout == nil {
-                    // If no active workout, check less frequently (every 5 seconds)
-                    try? await Task.sleep(nanoseconds: 5_000_000_000)
-                } else {
-                    // Active workout - poll every 2 seconds
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+    private func setupLiveWorkoutUpdates() {
+        // Watch for changes to liveWorkout from WebSocket
+        syncManager.$liveWorkout
+            .sink { workout in
+                Task {
+                    if workout != nil {
+                        // WebSocket says there's an active workout - fetch full data with metrics
+                        await fetchLiveWorkoutData()
+                        startPeriodicUpdates()
+                    } else {
+                        // No active workout
+                        liveWorkoutData = nil
+                        updateTask?.cancel()
+                    }
                 }
             }
+            .store(in: &cancellables)
+
+        // Initial fetch if there's already a live workout
+        if syncManager.liveWorkout != nil {
+            Task {
+                await fetchLiveWorkoutData()
+                startPeriodicUpdates()
+            }
         }
     }
 
-    private func stopLiveWorkoutPolling() {
-        pollingTask?.cancel()
-        pollingTask = nil
-        liveWorkout = nil
+    private func startPeriodicUpdates() {
+        updateTask?.cancel()
+
+        updateTask = Task {
+            while !Task.isCancelled && syncManager.liveWorkout != nil {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // Update every 2 seconds
+                await fetchLiveWorkoutData()
+            }
+        }
     }
 
-    private func fetchLiveWorkout() async {
+    private func fetchLiveWorkoutData() async {
         guard syncManager.isConnected else {
-            liveWorkout = nil
+            liveWorkoutData = nil
             return
         }
 
         let data = await syncManager.fetchLiveWorkout()
-        liveWorkout = data
+        liveWorkoutData = data
     }
 
     // Group workouts by date
