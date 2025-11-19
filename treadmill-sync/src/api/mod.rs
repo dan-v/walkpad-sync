@@ -2,45 +2,34 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{get, post},
     Json, Router,
 };
-use chrono::Utc;
+use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-use crate::bluetooth::BluetoothManager;
-use crate::storage::{Storage, Workout, WorkoutSample};
-
-mod websocket;
-pub use websocket::{create_event_channel, WorkoutEvent};
+use crate::storage::{DailySummary, HealthSync, Storage, TreadmillSample};
 
 // Validation constants
-const MAX_DEVICE_ID_LENGTH: usize = 128;
-const MAX_DEVICE_NAME_LENGTH: usize = 256;
-const MAX_LIMIT: i64 = 100;
-const MAX_WORKOUT_ID: i64 = i64::MAX / 2; // Reasonable upper bound
+const MAX_DATE_RANGE_DAYS: i64 = 365;
 
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<Storage>,
-    pub bluetooth: Arc<BluetoothManager>,
-    pub event_tx: broadcast::Sender<WorkoutEvent>,
 }
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
         .route("/api/health", get(health_check))
-        .route("/api/sync/register", post(register_sync_client))
-        .route("/api/workouts/pending", get(get_pending_workouts))
-        .route("/api/workouts/:id/samples", get(get_workout_samples))
-        .route("/api/workouts/:id/confirm_sync", post(confirm_sync))
-        .route("/api/workouts/:id", delete(delete_workout))
-        .route("/api/workouts/live", get(get_live_workout))
-        .route("/api/debug/live", get(get_debug_live))
-        .route("/ws/live", get(websocket::ws_handler))
+        .route("/api/dates", get(get_activity_dates))
+        .route("/api/dates/:date/summary", get(get_date_summary))
+        .route("/api/dates/:date/samples", get(get_date_samples))
+        .route("/api/dates/:date/sync", post(mark_date_synced))
+        .route("/api/dates/synced", get(get_synced_dates))
+        .route("/api/samples", get(get_samples_by_range))
+        .route("/api/stats", get(get_stats))
         .with_state(state)
 }
 
@@ -52,384 +41,212 @@ async fn health_check() -> impl IntoResponse {
     }))
 }
 
-// Register/update sync client
-#[derive(Debug, Deserialize)]
-struct RegisterRequest {
-    device_id: String,
-    device_name: Option<String>,
-}
-
+// Get all dates with activity
 #[derive(Debug, Serialize)]
-struct RegisterResponse {
-    status: String,
-    server_time: String,
+struct ActivityDatesResponse {
+    dates: Vec<String>,  // YYYY-MM-DD format
 }
 
-async fn register_sync_client(
+async fn get_activity_dates(
     State(state): State<AppState>,
-    Json(req): Json<RegisterRequest>,
-) -> Result<Json<RegisterResponse>, ApiError> {
-    // Validate inputs
-    validate_device_id(&req.device_id)?;
-    if let Some(ref name) = req.device_name {
-        validate_device_name(name)?;
-    }
+) -> Result<Json<ActivityDatesResponse>, ApiError> {
+    info!("Getting all activity dates");
 
-    info!("Registering sync client: {} ({})", req.device_id, req.device_name.as_deref().unwrap_or("unnamed"));
+    let dates = state.storage.get_activity_dates().await?;
 
-    state.storage
-        .register_sync_client(&req.device_id, req.device_name.as_deref())
-        .await?;
-
-    Ok(Json(RegisterResponse {
-        status: "ok".to_string(),
-        server_time: Utc::now().to_rfc3339(),
-    }))
+    Ok(Json(ActivityDatesResponse { dates }))
 }
 
-// Get pending workouts for sync
-#[derive(Debug, Deserialize)]
-struct PendingWorkoutsQuery {
-    device_id: String,
-    #[serde(default = "default_limit")]
-    limit: i64,
-}
+// Get daily summary for a specific date
+async fn get_date_summary(
+    State(state): State<AppState>,
+    axum::extract::Path(date_str): axum::extract::Path<String>,
+) -> Result<Json<DailySummary>, ApiError> {
+    let date = validate_date(&date_str)?;
+    info!("Getting summary for date: {}", date_str);
 
-fn default_limit() -> i64 {
-    10
-}
+    let summary = state.storage.get_daily_summary(date).await?;
 
-#[derive(Debug, Serialize)]
-struct PendingWorkoutsResponse {
-    workouts: Vec<WorkoutResponse>,
-    has_more: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WorkoutResponse {
-    id: i64,
-    workout_uuid: String,
-    start_time: String,
-    end_time: Option<String>,
-    total_duration: Option<i64>,
-    total_distance: Option<i64>,
-    total_steps: Option<i64>,
-    avg_speed: Option<f64>,
-    max_speed: Option<f64>,
-    total_calories: Option<i64>,
-    samples_url: String,
-}
-
-impl From<Workout> for WorkoutResponse {
-    fn from(w: Workout) -> Self {
-        Self {
-            id: w.id,
-            workout_uuid: w.workout_uuid,
-            start_time: w.start_time,
-            end_time: w.end_time,
-            total_duration: w.total_duration,
-            total_distance: w.total_distance,
-            total_steps: w.total_steps,
-            avg_speed: w.avg_speed,
-            max_speed: w.max_speed,
-            total_calories: w.total_calories,
-            samples_url: format!("/api/workouts/{}/samples", w.id),
-        }
+    match summary {
+        Some(s) => Ok(Json(s)),
+        None => Err(ApiError::NotFound(format!("No activity found for date: {}", date_str))),
     }
 }
 
-async fn get_pending_workouts(
-    State(state): State<AppState>,
-    Query(query): Query<PendingWorkoutsQuery>,
-) -> Result<Json<PendingWorkoutsResponse>, ApiError> {
-    // Validate inputs
-    validate_device_id(&query.device_id)?;
-    validate_limit(query.limit)?;
-
-    info!("Getting pending workouts for device: {}", query.device_id);
-
-    // Get or create sync client
-    let client = state.storage.get_sync_client(&query.device_id).await?;
-
-    let last_synced_id = client
-        .and_then(|c| c.last_synced_workout_id)
-        .unwrap_or(0);
-
-    // Get workouts after last synced ID
-    let workouts = state.storage
-        .get_workouts_after(last_synced_id, query.limit + 1)
-        .await?;
-
-    let has_more = workouts.len() > query.limit as usize;
-    let workouts: Vec<WorkoutResponse> = workouts
-        .into_iter()
-        .take(query.limit as usize)
-        .map(WorkoutResponse::from)
-        .collect();
-
-    Ok(Json(PendingWorkoutsResponse {
-        workouts,
-        has_more,
-    }))
-}
-
-// Get workout samples
+// Get all samples for a specific date
 #[derive(Debug, Serialize)]
 struct SamplesResponse {
+    date: String,
     samples: Vec<SampleResponse>,
 }
 
 #[derive(Debug, Serialize)]
 struct SampleResponse {
-    timestamp: String,
-    speed: Option<f64>,
-    distance: Option<i64>,
-    calories: Option<i64>,
-    cadence: Option<i64>,
+    timestamp: i64,           // Unix epoch
+    speed: Option<f64>,       // m/s
+    distance_total: Option<i64>,
+    calories_total: Option<i64>,
+    steps_total: Option<i64>,
 }
 
-impl From<WorkoutSample> for SampleResponse {
-    fn from(s: WorkoutSample) -> Self {
+impl From<TreadmillSample> for SampleResponse {
+    fn from(s: TreadmillSample) -> Self {
         Self {
             timestamp: s.timestamp,
             speed: s.speed,
-            distance: s.distance,
-            calories: s.calories,
-            cadence: s.cadence,
+            distance_total: s.distance_total,
+            calories_total: s.calories_total,
+            steps_total: s.steps_total,
         }
     }
 }
 
-async fn get_workout_samples(
+async fn get_date_samples(
     State(state): State<AppState>,
-    axum::extract::Path(workout_id): axum::extract::Path<i64>,
+    axum::extract::Path(date_str): axum::extract::Path<String>,
 ) -> Result<Json<SamplesResponse>, ApiError> {
-    // Validate input
-    validate_workout_id(workout_id)?;
+    let date = validate_date(&date_str)?;
+    info!("Getting samples for date: {}", date_str);
 
-    info!("Getting samples for workout: {}", workout_id);
+    let samples = state.storage.get_samples_for_date(date).await?;
 
-    let samples = state.storage.get_samples(workout_id).await?;
+    if samples.is_empty() {
+        return Err(ApiError::NotFound(format!("No samples found for date: {}", date_str)));
+    }
+
     let samples: Vec<SampleResponse> = samples.into_iter().map(SampleResponse::from).collect();
 
-    Ok(Json(SamplesResponse { samples }))
+    Ok(Json(SamplesResponse {
+        date: date_str,
+        samples,
+    }))
 }
 
-// Confirm sync
+// Get samples by date range (for bulk queries)
 #[derive(Debug, Deserialize)]
-struct ConfirmSyncRequest {
-    device_id: String,
-    healthkit_uuid: Option<String>,
+struct SamplesRangeQuery {
+    start_date: String,  // YYYY-MM-DD
+    end_date: String,    // YYYY-MM-DD
 }
 
-#[derive(Debug, Serialize)]
-struct ConfirmSyncResponse {
-    status: String,
-}
-
-async fn confirm_sync(
+async fn get_samples_by_range(
     State(state): State<AppState>,
-    axum::extract::Path(workout_id): axum::extract::Path<i64>,
-    Json(req): Json<ConfirmSyncRequest>,
-) -> Result<Json<ConfirmSyncResponse>, ApiError> {
-    // Validate inputs
-    validate_workout_id(workout_id)?;
-    validate_device_id(&req.device_id)?;
+    Query(query): Query<SamplesRangeQuery>,
+) -> Result<Json<SamplesResponse>, ApiError> {
+    let start_date = validate_date(&query.start_date)?;
+    let end_date = validate_date(&query.end_date)?;
 
-    if let Some(ref hk_uuid) = req.healthkit_uuid {
-        info!("Confirming sync for workout {} from device {} (HealthKit UUID: {})",
-              workout_id, req.device_id, hk_uuid);
-    } else {
-        info!("Confirming sync for workout {} from device {}", workout_id, req.device_id);
+    // Validate range
+    let days_diff = (end_date - start_date).num_days();
+    if days_diff < 0 {
+        return Err(ApiError::Validation(ValidationError::new("start_date must be before end_date")));
+    }
+    if days_diff > MAX_DATE_RANGE_DAYS {
+        return Err(ApiError::Validation(ValidationError::new(
+            format!("Date range too large (max {} days)", MAX_DATE_RANGE_DAYS)
+        )));
     }
 
-    state.storage
-        .update_sync_checkpoint(&req.device_id, workout_id)
-        .await?;
+    info!("Getting samples from {} to {}", query.start_date, query.end_date);
 
-    Ok(Json(ConfirmSyncResponse {
-        status: "ok".to_string(),
+    let start = start_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let end = end_date.and_hms_opt(23, 59, 59).unwrap().and_utc();
+
+    let samples = state.storage.get_samples_by_date_range(start, end).await?;
+    let samples: Vec<SampleResponse> = samples.into_iter().map(SampleResponse::from).collect();
+
+    Ok(Json(SamplesResponse {
+        date: format!("{} to {}", query.start_date, query.end_date),
+        samples,
     }))
 }
 
-// Delete workout
+// Mark a date as synced to Apple Health
 #[derive(Debug, Serialize)]
-struct DeleteWorkoutResponse {
+struct SyncResponse {
     status: String,
+    date: String,
 }
 
-async fn delete_workout(
+async fn mark_date_synced(
     State(state): State<AppState>,
-    axum::extract::Path(workout_id): axum::extract::Path<i64>,
-) -> Result<Json<DeleteWorkoutResponse>, ApiError> {
-    // Validate input
-    validate_workout_id(workout_id)?;
+    axum::extract::Path(date_str): axum::extract::Path<String>,
+) -> Result<Json<SyncResponse>, ApiError> {
+    let date = validate_date(&date_str)?;
+    info!("Marking date as synced: {}", date_str);
 
-    info!("Deleting workout {}", workout_id);
-
-    state.storage.delete_workout(workout_id).await?;
-
-    Ok(Json(DeleteWorkoutResponse {
-        status: "ok".to_string(),
-    }))
-}
-
-// Get current live workout
-#[derive(Debug, Serialize)]
-struct LiveWorkoutResponse {
-    workout: Option<WorkoutResponse>,
-    current_metrics: Option<CurrentMetrics>,
-}
-
-#[derive(Debug, Serialize)]
-struct CurrentMetrics {
-    current_speed: Option<f64>,
-    distance_so_far: Option<u32>,
-    steps_so_far: Option<u16>,
-    calories_so_far: Option<u16>,
-}
-
-async fn get_live_workout(
-    State(state): State<AppState>,
-) -> Result<Json<LiveWorkoutResponse>, ApiError> {
-    let current_workout = state.storage.get_current_workout().await?;
-    let current_metrics = state.bluetooth.get_current_metrics().await?;
-
-    let workout = current_workout.map(WorkoutResponse::from);
-    let metrics = current_metrics.map(|m| CurrentMetrics {
-        current_speed: m.speed,
-        distance_so_far: m.distance,
-        steps_so_far: m.steps,
-        calories_so_far: m.calories,
-    });
-
-    Ok(Json(LiveWorkoutResponse {
-        workout,
-        current_metrics: metrics,
-    }))
-}
-
-// Debug endpoint - detailed live workout info
-#[derive(Debug, Serialize)]
-struct DebugLiveResponse {
-    workout: Option<WorkoutResponse>,
-    current_metrics: Option<CurrentMetrics>,
-    recent_samples: Vec<DebugSampleResponse>,
-    sample_count: usize,
-}
-
-#[derive(Debug, Serialize)]
-struct DebugSampleResponse {
-    timestamp: String,
-    speed: Option<f64>,
-    distance: Option<i64>,
-    calories: Option<i64>,
-    cadence: Option<i64>,
-}
-
-impl From<WorkoutSample> for DebugSampleResponse {
-    fn from(s: WorkoutSample) -> Self {
-        Self {
-            timestamp: s.timestamp,
-            speed: s.speed,
-            distance: s.distance,
-            calories: s.calories,
-            cadence: s.cadence,
-        }
+    // Verify the date has data before marking as synced
+    let summary = state.storage.get_daily_summary(date).await?;
+    if summary.is_none() {
+        return Err(ApiError::NotFound(format!("No activity found for date: {}", date_str)));
     }
+
+    state.storage.mark_date_synced(&date_str).await?;
+
+    Ok(Json(SyncResponse {
+        status: "ok".to_string(),
+        date: date_str,
+    }))
 }
 
-async fn get_debug_live(
+// Get all synced dates
+#[derive(Debug, Serialize)]
+struct SyncedDatesResponse {
+    synced_dates: Vec<HealthSync>,
+}
+
+async fn get_synced_dates(
     State(state): State<AppState>,
-) -> Result<Json<DebugLiveResponse>, ApiError> {
-    let current_workout = state.storage.get_current_workout().await?;
-    let current_metrics = state.bluetooth.get_current_metrics().await?;
+) -> Result<Json<SyncedDatesResponse>, ApiError> {
+    info!("Getting all synced dates");
 
-    let (recent_samples, sample_count) = if let Some(ref workout) = current_workout {
-        // Efficiently fetch only the recent samples and count (no need to load all samples)
-        let recent_samples = state.storage.get_recent_samples(workout.id, 20).await?;
-        let count = state.storage.get_sample_count(workout.id).await? as usize;
+    let synced_dates = state.storage.get_synced_dates().await?;
 
-        // Convert to response format
-        let recent: Vec<DebugSampleResponse> = recent_samples
-            .into_iter()
-            .map(DebugSampleResponse::from)
-            .collect();
+    Ok(Json(SyncedDatesResponse { synced_dates }))
+}
 
-        (recent, count)
-    } else {
-        (vec![], 0)
-    };
+// Get general stats
+#[derive(Debug, Serialize)]
+struct StatsResponse {
+    total_samples: i64,
+    latest_sample_time: Option<String>,
+    server_time: String,
+}
 
-    let workout = current_workout.map(WorkoutResponse::from);
-    let metrics = current_metrics.map(|m| CurrentMetrics {
-        current_speed: m.speed,
-        distance_so_far: m.distance,
-        steps_so_far: m.steps,
-        calories_so_far: m.calories,
+async fn get_stats(
+    State(state): State<AppState>,
+) -> Result<Json<StatsResponse>, ApiError> {
+    info!("Getting stats");
+
+    let total_samples = state.storage.get_total_sample_count().await?;
+    let latest_sample = state.storage.get_latest_sample().await?;
+
+    let latest_sample_time = latest_sample.map(|s| {
+        chrono::DateTime::<Utc>::from_timestamp(s.timestamp, 0)
+            .unwrap()
+            .to_rfc3339()
     });
 
-    Ok(Json(DebugLiveResponse {
-        workout,
-        current_metrics: metrics,
-        recent_samples,
-        sample_count,
+    Ok(Json(StatsResponse {
+        total_samples,
+        latest_sample_time,
+        server_time: Utc::now().to_rfc3339(),
     }))
 }
 
 // Validation helpers
-fn validate_device_id(device_id: &str) -> Result<(), ValidationError> {
-    if device_id.is_empty() {
-        return Err(ValidationError::new("device_id cannot be empty"));
-    }
-
-    if device_id.len() > MAX_DEVICE_ID_LENGTH {
-        return Err(ValidationError::new(
-            format!("device_id too long (max {} characters)", MAX_DEVICE_ID_LENGTH)
-        ));
-    }
-
-    // Allow alphanumeric, hyphens, underscores, and dots (common for device IDs/UUIDs)
-    if !device_id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.') {
-        return Err(ValidationError::new("device_id contains invalid characters"));
-    }
-
-    Ok(())
+fn validate_date(date_str: &str) -> Result<NaiveDate, ValidationError> {
+    NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .map_err(|_| ValidationError::new("Invalid date format (expected YYYY-MM-DD)"))
 }
 
-fn validate_device_name(name: &str) -> Result<(), ValidationError> {
-    if name.len() > MAX_DEVICE_NAME_LENGTH {
-        return Err(ValidationError::new(
-            format!("device_name too long (max {} characters)", MAX_DEVICE_NAME_LENGTH)
-        ));
-    }
-    Ok(())
-}
-
-fn validate_limit(limit: i64) -> Result<(), ValidationError> {
-    if limit <= 0 {
-        return Err(ValidationError::new("limit must be positive"));
-    }
-
-    if limit > MAX_LIMIT {
-        return Err(ValidationError::new(
-            format!("limit too large (max {})", MAX_LIMIT)
-        ));
-    }
-
-    Ok(())
-}
-
-fn validate_workout_id(workout_id: i64) -> Result<(), ValidationError> {
-    if workout_id <= 0 {
-        return Err(ValidationError::new("workout_id must be positive"));
-    }
-
-    if workout_id > MAX_WORKOUT_ID {
-        return Err(ValidationError::new("workout_id out of valid range"));
-    }
-
-    Ok(())
+// Event for WebSocket/SSE (simplified - no workout events)
+#[derive(Debug, Clone, Serialize)]
+pub enum ConnectionStatusEvent {
+    Connected,
+    Disconnected,
+    Scanning,
+    Error(String),
 }
 
 // Error handling
@@ -449,6 +266,7 @@ impl ValidationError {
 #[derive(Debug)]
 enum ApiError {
     Validation(ValidationError),
+    NotFound(String),
     Internal(anyhow::Error),
 }
 
@@ -461,6 +279,16 @@ impl IntoResponse for ApiError {
                     StatusCode::BAD_REQUEST,
                     Json(serde_json::json!({
                         "error": e.message
+                    })),
+                )
+                    .into_response()
+            }
+            ApiError::NotFound(msg) => {
+                warn!("Not found: {}", msg);
+                (
+                    StatusCode::NOT_FOUND,
+                    Json(serde_json::json!({
+                        "error": msg
                     })),
                 )
                     .into_response()
