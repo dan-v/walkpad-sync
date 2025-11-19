@@ -141,14 +141,18 @@ actor APIClient {
             throw APIError.invalidURL
         }
 
+        print("🔍 Fetching live workout from: \(url)")
         let (data, response) = try await session.data(from: url)
 
         guard let httpResponse = response as? HTTPURLResponse else {
             throw APIError.serverError
         }
 
+        print("📡 Response status: \(httpResponse.statusCode)")
+
         // Return nil if no workout in progress (204 No Content or empty response)
         if httpResponse.statusCode == 204 || data.isEmpty {
+            print("ℹ️ No live workout (204 or empty)")
             return nil
         }
 
@@ -156,11 +160,22 @@ actor APIClient {
             throw APIError.serverError
         }
 
+        // Log the raw JSON for debugging
+        if let jsonString = String(data: data, encoding: .utf8) {
+            print("📦 Raw JSON response:")
+            print(jsonString)
+        }
+
         let decoder = JSONDecoder()
         let result = try decoder.decode(LiveWorkoutResponse.self, from: data)
 
+        print("✅ Successfully decoded live workout")
+        print("  Workout ID: \(result.workout?.id ?? -1)")
+        print("  Has metrics: \(result.currentMetrics != nil)")
+
         // Return nil if no workout in the response
         if result.workout == nil {
+            print("⚠️ No workout in response")
             return nil
         }
 

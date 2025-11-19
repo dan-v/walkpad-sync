@@ -105,8 +105,8 @@ struct PendingWorkoutsResponse {
     has_more: bool,
 }
 
-#[derive(Debug, Serialize)]
-struct WorkoutResponse {
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkoutResponse {
     id: i64,
     workout_uuid: String,
     start_time: String,

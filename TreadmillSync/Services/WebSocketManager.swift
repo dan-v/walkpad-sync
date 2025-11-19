@@ -116,22 +116,26 @@ class WebSocketManager: ObservableObject {
     }
 
     private func connectWebSocket() {
-        guard isActive else { return }
+        guard isActive else {
+            print("⚠️ WebSocket connect called but not active")
+            return
+        }
 
         // Build WebSocket URL
         guard let url = buildWebSocketURL() else {
-            print("Invalid WebSocket URL")
+            print("❌ Invalid WebSocket URL")
             scheduleReconnect()
             return
         }
 
-        print("Connecting to WebSocket: \(url)")
+        print("🔌 Connecting to WebSocket: \(url)")
 
         let session = URLSession(configuration: .default)
         webSocketTask = session.webSocketTask(with: url)
         webSocketTask?.resume()
 
         isConnected = true
+        print("✅ WebSocket connection initiated")
 
         // Start receiving messages
         receiveMessage()
@@ -176,9 +180,10 @@ class WebSocketManager: ObservableObject {
     private func handleMessage(_ message: URLSessionWebSocketTask.Message) async {
         switch message {
         case .string(let text):
+            print("📨 Received WebSocket string message: \(text)")
             // Decode JSON event
             guard let data = text.data(using: .utf8) else {
-                print("Failed to convert message to data")
+                print("❌ Failed to convert message to data")
                 return
             }
 
@@ -186,30 +191,33 @@ class WebSocketManager: ObservableObject {
                 let event = try JSONDecoder().decode(WorkoutEvent.self, from: data)
                 await handleEvent(event)
             } catch {
-                print("Failed to decode WebSocket event: \(error)")
-                print("Raw message: \(text)")
+                print("❌ Failed to decode WebSocket event: \(error)")
+                print("   Raw message: \(text)")
             }
 
         case .data(let data):
+            print("📨 Received WebSocket binary message (\(data.count) bytes)")
             do {
                 let event = try JSONDecoder().decode(WorkoutEvent.self, from: data)
                 await handleEvent(event)
             } catch {
-                print("Failed to decode WebSocket event: \(error)")
+                print("❌ Failed to decode WebSocket event: \(error)")
             }
 
         @unknown default:
-            print("Unknown WebSocket message type")
+            print("⚠️ Unknown WebSocket message type")
         }
     }
 
     private func handleEvent(_ event: WorkoutEvent) async {
-        print("Received WebSocket event: \(event)")
+        print("📡 Received WebSocket event: \(event)")
 
         // Update local state
         switch event {
         case .workoutStarted(let workout):
+            print("🏃 WorkoutStarted event - Setting currentLiveWorkout to \(workout.id)")
             currentLiveWorkout = workout
+            print("  Current live workout is now: \(currentLiveWorkout?.id ?? -1)")
 
         case .workoutSample(_, _):
             // Sample updates - just forward to subscribers
@@ -217,18 +225,22 @@ class WebSocketManager: ObservableObject {
 
         case .workoutCompleted(let workout):
             // Workout completed - clear live workout if it matches
+            print("✅ WorkoutCompleted event for workout \(workout.id)")
             if currentLiveWorkout?.id == workout.id {
+                print("  Clearing currentLiveWorkout")
                 currentLiveWorkout = nil
             }
 
         case .workoutFailed(let workoutId, _):
             // Workout failed - clear live workout if it matches
+            print("❌ WorkoutFailed event for workout \(workoutId)")
             if currentLiveWorkout?.id == workoutId {
+                print("  Clearing currentLiveWorkout")
                 currentLiveWorkout = nil
             }
 
         case .connectionStatus(let connected):
-            print("Server connection status: \(connected)")
+            print("📊 Server connection status: \(connected ? "connected" : "disconnected")")
         }
 
         // Publish event to subscribers

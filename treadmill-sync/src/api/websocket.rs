@@ -10,16 +10,16 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
-use super::AppState;
-use crate::storage::{Workout, WorkoutSample};
+use super::{AppState, WorkoutResponse};
+use crate::storage::WorkoutSample;
 
 // WebSocket events that can be broadcast to clients
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum WorkoutEvent {
-    WorkoutStarted { workout: Workout },
+    WorkoutStarted { workout: WorkoutResponse },
     WorkoutSample { workout_id: i64, sample: WorkoutSample },
-    WorkoutCompleted { workout: Workout },
+    WorkoutCompleted { workout: WorkoutResponse },
     WorkoutFailed { workout_id: i64, reason: String },
     ConnectionStatus { connected: bool },
 }
@@ -48,15 +48,44 @@ async fn handle_socket(socket: WebSocket, state: AppState) {
     }
 
     // Send current live workout if any
-    if let Ok(Some(current_data)) = state.bluetooth.get_current_metrics().await {
-        // Send current workout state
-        if let Some(workout_id) = current_data.workout_id {
-            if let Ok(Some(workout)) = state.storage.get_workout(workout_id).await {
-                let event = WorkoutEvent::WorkoutStarted { workout };
-                if let Ok(msg) = serde_json::to_string(&event) {
-                    let _ = sender.send(Message::Text(msg)).await;
+    info!("🔍 Checking for current live workout to send to new client...");
+    match state.bluetooth.get_current_metrics().await {
+        Ok(Some(current_data)) => {
+            info!("  Found current metrics: workout_id={:?}", current_data.workout_id);
+            // Send current workout state
+            if let Some(workout_id) = current_data.workout_id {
+                match state.storage.get_workout(workout_id).await {
+                    Ok(Some(workout)) => {
+                        info!("  ✅ Found workout {}, sending WorkoutStarted event", workout_id);
+                        let workout_response = WorkoutResponse::from(workout);
+                        let event = WorkoutEvent::WorkoutStarted { workout: workout_response };
+                        match serde_json::to_string(&event) {
+                            Ok(msg) => {
+                                if let Err(e) = sender.send(Message::Text(msg)).await {
+                                    error!("  ❌ Failed to send WorkoutStarted: {}", e);
+                                } else {
+                                    info!("  📤 Sent WorkoutStarted event to client");
+                                }
+                            }
+                            Err(e) => error!("  ❌ Failed to serialize WorkoutStarted: {}", e),
+                        }
+                    }
+                    Ok(None) => {
+                        error!("  ❌ Workout {} not found in storage", workout_id);
+                    }
+                    Err(e) => {
+                        error!("  ❌ Failed to get workout {}: {}", workout_id, e);
+                    }
                 }
+            } else {
+                info!("  No workout_id in current metrics");
             }
+        }
+        Ok(None) => {
+            info!("  No current workout active");
+        }
+        Err(e) => {
+            error!("  ❌ Failed to get current metrics: {}", e);
         }
     }
 
