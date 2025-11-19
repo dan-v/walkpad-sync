@@ -48,9 +48,6 @@ class HealthKitManager: ObservableObject {
         let startDate = firstSample.date
         let endDate = lastSample.date
 
-        print("📝 Syncing workout for \(date): \(startDate) to \(endDate)")
-        print("   Distance: \(distanceMeters)m, Calories: \(calories), Steps: \(steps), Samples: \(samples.count)")
-
         // Create workout configuration
         let configuration = HKWorkoutConfiguration()
         configuration.activityType = .walking
@@ -65,7 +62,6 @@ class HealthKitManager: ObservableObject {
 
         // Begin workout collection
         try await builder.beginCollection(at: startDate)
-        print("✅ Collection started")
 
         // Add samples to builder
         var workoutSamples: [HKSample] = []
@@ -127,20 +123,14 @@ class HealthKitManager: ObservableObject {
             }
         }
 
-        print("📊 Created \(workoutSamples.count) HealthKit samples")
-
         // Add samples to workout
         if !workoutSamples.isEmpty {
             try await builder.addSamples(workoutSamples)
-            print("✅ Added samples to workout")
         }
 
         // End collection and finish workout
         try await builder.endCollection(at: endDate)
-        print("✅ Collection ended")
-
         let workout = try await builder.finishWorkout()
-        print("✅ Workout saved to HealthKit: \(workout.uuid)")
     }
 }
 

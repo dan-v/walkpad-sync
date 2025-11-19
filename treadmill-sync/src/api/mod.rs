@@ -240,15 +240,6 @@ fn validate_date(date_str: &str) -> Result<NaiveDate, ValidationError> {
         .map_err(|_| ValidationError::new("Invalid date format (expected YYYY-MM-DD)"))
 }
 
-// Event for WebSocket/SSE (simplified - no workout events)
-#[derive(Debug, Clone, Serialize)]
-pub enum ConnectionStatusEvent {
-    Connected,
-    Disconnected,
-    Scanning,
-    Error(String),
-}
-
 // Error handling
 #[derive(Debug)]
 struct ValidationError {

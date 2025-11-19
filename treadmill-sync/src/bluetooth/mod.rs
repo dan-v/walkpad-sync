@@ -13,7 +13,6 @@ use tokio::sync::{broadcast, RwLock};
 use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 
-use crate::api::ConnectionStatusEvent;
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use ftms::{
