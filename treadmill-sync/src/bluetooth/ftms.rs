@@ -325,52 +325,37 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Distance => {
-            // Distance format: Check if 16-bit like steps, or 8-bit as originally assumed
+            // Distance format: 16-bit big-endian in bytes[2] and bytes[3]
+            // Response format: [A1, AA, HIGH_BYTE, LOW_BYTE, ...]
+            // Value is in hundredths of miles (2362 = 23.62 miles)
             if data.len() < 4 {
                 return Err(anyhow!("LifeSpan distance data too short"));
             }
 
-            // DEBUG: Log both interpretations
-            let distance_8bit = data[3];
-            let distance_16bit = if data.len() >= 4 {
-                u16::from_be_bytes([data[2], data[3]])
-            } else {
-                0
-            };
-
-            warn!("📏 DISTANCE: byte[2]=0x{:02X} byte[3]=0x{:02X} | 8-bit={} hundredths | 16-bit BE={} hundredths",
-                  data[2], data[3], distance_8bit, distance_16bit);
-
-            // For now, use 8-bit parsing (original logic)
-            let distance_hundredths = data[3] as u32;
+            // Parse as 16-bit big-endian from bytes[2] and bytes[3]
+            let distance_hundredths = u16::from_be_bytes([data[2], data[3]]) as u32;
             let distance_miles = distance_hundredths as f64 / 100.0;
             let distance_meters = (distance_miles * 1609.34) as u32;
 
             result.distance = Some(distance_meters);
-            debug!("LifeSpan distance: {:.2} miles = {} meters", distance_miles, distance_meters);
+            debug!("LifeSpan distance: {:.2} miles = {} meters (raw: {} hundredths from bytes [0x{:02X}, 0x{:02X}])",
+                   distance_miles, distance_meters, distance_hundredths, data[2], data[3]);
         }
 
         LifeSpanQuery::Calories => {
-            // Calories format: Check if 16-bit like steps, or 8-bit as originally assumed
+            // Calories format: 16-bit big-endian in bytes[2] and bytes[3]
+            // Response format: [A1, AA, HIGH_BYTE, LOW_BYTE, ...]
+            // Value is in kcal (972 = 972 kcal)
             if data.len() < 4 {
                 return Err(anyhow!("LifeSpan calories data too short"));
             }
 
-            // DEBUG: Log both interpretations
-            let calories_8bit = data[3];
-            let calories_16bit = if data.len() >= 4 {
-                u16::from_be_bytes([data[2], data[3]])
-            } else {
-                0
-            };
+            // Parse as 16-bit big-endian from bytes[2] and bytes[3]
+            let calories = u16::from_be_bytes([data[2], data[3]]);
 
-            warn!("🔥 CALORIES: byte[2]=0x{:02X} byte[3]=0x{:02X} | 8-bit={} kcal | 16-bit BE={} kcal",
-                  data[2], data[3], calories_8bit, calories_16bit);
-
-            // For now, use 8-bit parsing (original logic)
-            let calories = data[3] as u16;
             result.total_energy = Some(calories);
-            debug!("LifeSpan calories: {} kcal", calories);
+            debug!("LifeSpan calories: {} kcal (raw bytes: [0x{:02X}, 0x{:02X}])",
+                   calories, data[2], data[3]);
         }
 
         LifeSpanQuery::Steps => {
