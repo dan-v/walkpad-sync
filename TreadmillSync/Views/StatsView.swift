@@ -2,339 +2,182 @@ import SwiftUI
 import Charts
 
 struct StatsView: View {
-    private let apiClient = APIClient(config: ServerConfig.load())
-    @State private var activityDates: [String] = []
-    @State private var dailySummaries: [DailySummary] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var selectedPeriod: TimePeriod = .month
-
-    enum TimePeriod: String, CaseIterable {
-        case week = "Week"
-        case month = "Month"
-        case all = "All Time"
-
-        var days: Int? {
-            switch self {
-            case .week: return 7
-            case .month: return 30
-            case .all: return nil
-            }
-        }
-    }
+    @StateObject private var viewModel = StatsViewModel()
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 20) {
-                    if isLoading {
+                VStack(spacing: 24) {
+                    if viewModel.isLoading {
                         ProgressView("Loading stats...")
                             .padding()
-                    } else if let error = errorMessage {
-                        errorView(error)
-                    } else if dailySummaries.isEmpty {
-                        emptyStateView
+                    } else if viewModel.dailySummaries.isEmpty {
+                        emptyState
                     } else {
-                        // Period Selector
-                        periodSelector
+                        // Summary Cards
+                        summaryCards
 
-                        // Overview Cards
-                        overviewCards
+                        // Full Month Calendar
+                        monthCalendar
 
-                        // Calendar Heatmap
-                        calendarHeatmap
-
-                        // Charts
-                        chartsSection
+                        // Trend Chart
+                        if viewModel.dailySummaries.count > 1 {
+                            trendChart
+                        }
                     }
                 }
-                .padding()
+                .padding(.vertical)
             }
-            .navigationTitle("Statistics")
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button {
-                        Task { await loadData() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .disabled(isLoading)
-                }
+            .navigationTitle("Stats")
+            .refreshable {
+                await viewModel.loadData()
             }
-            .task {
-                await loadData()
-            }
+        }
+        .task {
+            await viewModel.loadData()
         }
     }
 
-    private var periodSelector: some View {
-        Picker("Period", selection: $selectedPeriod) {
-            ForEach(TimePeriod.allCases, id: \.self) { period in
-                Text(period.rawValue).tag(period)
-            }
+    // MARK: - Summary Cards
+
+    private var summaryCards: some View {
+        LazyVGrid(columns: [
+            GridItem(.flexible()),
+            GridItem(.flexible())
+        ], spacing: 12) {
+            StatSummaryCard(
+                title: "Streak",
+                value: "\(viewModel.currentStreak)",
+                subtitle: viewModel.currentStreak == 1 ? "day" : "days",
+                icon: "flame.fill",
+                color: .orange
+            )
+
+            StatSummaryCard(
+                title: "This Week",
+                value: viewModel.weekStepsFormatted,
+                subtitle: "steps",
+                icon: "calendar.badge.clock",
+                color: .blue
+            )
+
+            StatSummaryCard(
+                title: "This Month",
+                value: viewModel.monthStepsFormatted,
+                subtitle: "steps",
+                icon: "calendar",
+                color: .green
+            )
+
+            StatSummaryCard(
+                title: "Best Day",
+                value: viewModel.bestDayStepsFormatted,
+                subtitle: "steps",
+                icon: "trophy.fill",
+                color: .yellow
+            )
         }
-        .pickerStyle(.segmented)
         .padding(.horizontal)
     }
 
-    private var filteredSummaries: [DailySummary] {
-        guard let days = selectedPeriod.days else {
-            return dailySummaries
-        }
-        return Array(dailySummaries.suffix(days))
-    }
+    // MARK: - Month Calendar
 
-    private var overviewCards: some View {
-        VStack(spacing: 16) {
-            Text(selectedPeriod.rawValue)
-                .font(.headline)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-                StatCard(
-                    title: "Total Steps",
-                    value: formatNumber(totalSteps),
-                    icon: "figure.walk",
-                    color: .blue
-                )
-
-                StatCard(
-                    title: "Total Distance",
-                    value: formatDistance(totalDistance),
-                    icon: "arrow.left.and.right",
-                    color: .green
-                )
-
-                StatCard(
-                    title: "Total Calories",
-                    value: formatNumber(totalCalories),
-                    icon: "flame.fill",
-                    color: .orange
-                )
-
-                StatCard(
-                    title: "Active Days",
-                    value: "\(filteredSummaries.count)",
-                    icon: "calendar",
-                    color: .purple
-                )
-            }
-        }
-    }
-
-    private var calendarHeatmap: some View {
+    private var monthCalendar: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Activity Heatmap")
-                .font(.headline)
+            HStack {
+                Button {
+                    viewModel.previousMonth()
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .foregroundColor(.blue)
+                }
 
-            CalendarHeatmapView(summaries: dailySummaries)
+                Spacer()
+
+                Text(viewModel.currentMonthTitle)
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    viewModel.nextMonth()
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .foregroundColor(.blue)
+                }
+                .disabled(viewModel.isCurrentMonth)
+            }
+            .padding(.horizontal)
+
+            MonthCalendarView(
+                year: viewModel.selectedYear,
+                month: viewModel.selectedMonth,
+                summaries: viewModel.dailySummaries
+            )
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(.horizontal)
     }
 
-    private var chartsSection: some View {
-        VStack(spacing: 20) {
-            if filteredSummaries.count > 1 {
-                stepsChart
-                distanceChart
-                caloriesChart
-                speedComparisonChart
-            }
-        }
-    }
+    // MARK: - Trend Chart
 
-    private var stepsChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Steps Trend")
+    private var trendChart: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Daily Steps")
                 .font(.headline)
+                .padding(.horizontal)
 
-            Chart(filteredSummaries) { summary in
-                BarMark(
-                    x: .value("Date", formatDateShort(summary.date)),
-                    y: .value("Steps", summary.steps)
-                )
-                .foregroundStyle(.blue.gradient)
+            Chart {
+                ForEach(viewModel.last30Days) { summary in
+                    LineMark(
+                        x: .value("Date", summary.dateDisplay ?? Date()),
+                        y: .value("Steps", summary.steps)
+                    )
+                    .foregroundStyle(.blue)
+                    .interpolationMethod(.catmullRom)
+
+                    AreaMark(
+                        x: .value("Date", summary.dateDisplay ?? Date()),
+                        y: .value("Steps", summary.steps)
+                    )
+                    .foregroundStyle(.blue.opacity(0.1))
+                    .interpolationMethod(.catmullRom)
+                }
             }
             .frame(height: 200)
-            .chartYAxis {
-                AxisMarks(position: .leading)
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-
-    private var distanceChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Distance Trend")
-                .font(.headline)
-
-            Chart(filteredSummaries) { summary in
-                LineMark(
-                    x: .value("Date", formatDateShort(summary.date)),
-                    y: .value("Distance", Double(summary.distanceMeters) / 1609.34)
-                )
-                .foregroundStyle(.green.gradient)
-                .interpolationMethod(.catmullRom)
-
-                AreaMark(
-                    x: .value("Date", formatDateShort(summary.date)),
-                    y: .value("Distance", Double(summary.distanceMeters) / 1609.34)
-                )
-                .foregroundStyle(.green.gradient.opacity(0.2))
-                .interpolationMethod(.catmullRom)
-            }
-            .frame(height: 200)
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisValueLabel {
-                        if let miles = value.as(Double.self) {
-                            Text("\(miles, specifier: "%.1f") mi")
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: 5)) { value in
+                    if let date = value.as(Date.self) {
+                        AxisValueLabel {
+                            Text(date, format: .dateTime.month().day())
+                                .font(.caption2)
                         }
                     }
                 }
             }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-
-    private var caloriesChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Calories Burned")
-                .font(.headline)
-
-            Chart(filteredSummaries) { summary in
-                BarMark(
-                    x: .value("Date", formatDateShort(summary.date)),
-                    y: .value("Calories", summary.calories)
-                )
-                .foregroundStyle(.orange.gradient)
-            }
-            .frame(height: 200)
             .chartYAxis {
                 AxisMarks(position: .leading)
             }
+            .padding(.horizontal)
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(.horizontal)
     }
 
-    private var speedComparisonChart: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Speed Analysis")
-                .font(.headline)
-
-            Chart(filteredSummaries) { summary in
-                BarMark(
-                    x: .value("Date", formatDateShort(summary.date)),
-                    y: .value("Speed", summary.avgSpeed * 2.23694) // m/s to mph
-                )
-                .foregroundStyle(.purple.gradient)
-            }
-            .frame(height: 200)
-            .chartYAxis {
-                AxisMarks(position: .leading) { value in
-                    AxisValueLabel {
-                        if let mph = value.as(Double.self) {
-                            Text("\(mph, specifier: "%.1f") mph")
-                        }
-                    }
-                }
-            }
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-    }
-
-    // MARK: - Computed Properties
-
-    private var totalSteps: Int64 {
-        filteredSummaries.reduce(0) { $0 + $1.steps }
-    }
-
-    private var totalDistance: Int64 {
-        filteredSummaries.reduce(0) { $0 + $1.distanceMeters }
-    }
-
-    private var totalCalories: Int64 {
-        filteredSummaries.reduce(0) { $0 + $1.calories }
-    }
-
-    // MARK: - Helper Methods
-
-    private func loadData() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            activityDates = try await apiClient.fetchActivityDates()
-
-            var summaries: [DailySummary] = []
-            for date in activityDates {
-                if let summary = try? await apiClient.fetchDailySummary(date: date) {
-                    summaries.append(summary)
-                }
-            }
-
-            dailySummaries = summaries.sorted { $0.date < $1.date }
-        } catch {
-            errorMessage = "Failed to load stats: \(error.localizedDescription)"
-        }
-
-        isLoading = false
-    }
-
-    private func formatDateShort(_ dateString: String) -> String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        guard let date = formatter.date(from: dateString) else { return dateString }
-
-        formatter.dateFormat = "M/d"
-        return formatter.string(from: date)
-    }
-
-    private func formatNumber(_ num: Int64) -> String {
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        return formatter.string(from: NSNumber(value: num)) ?? "\(num)"
-    }
-
-    private func formatDistance(_ meters: Int64) -> String {
-        let miles = Double(meters) / 1609.34
-        return String(format: "%.2f mi", miles)
-    }
-
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 50))
-                .foregroundColor(.orange)
-            Text(message)
-                .foregroundColor(.secondary)
-                .multilineTextAlignment(.center)
-        }
-        .padding()
-    }
-
-    private var emptyStateView: some View {
+    private var emptyState: some View {
         VStack(spacing: 12) {
             Image(systemName: "chart.line.uptrend.xyaxis")
-                .font(.system(size: 50))
-                .foregroundColor(.gray)
-            Text("No activity data yet")
+                .font(.system(size: 60))
                 .foregroundColor(.secondary)
+            Text("No Activity Yet")
+                .font(.title2)
+                .bold()
             Text("Start using your treadmill to see stats here")
                 .font(.caption)
                 .foregroundColor(.secondary)
@@ -343,58 +186,105 @@ struct StatsView: View {
     }
 }
 
-// MARK: - Calendar Heatmap
+// MARK: - Summary Card Component
 
-struct CalendarHeatmapView: View {
+struct StatSummaryCard: View {
+    let title: String
+    let value: String
+    let subtitle: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: icon)
+                    .foregroundColor(color)
+                    .font(.title3)
+                Spacer()
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(value)
+                    .font(.title2)
+                    .fontWeight(.bold)
+                Text(subtitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+            }
+
+            Text(title)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+// MARK: - Month Calendar View
+
+struct MonthCalendarView: View {
+    let year: Int
+    let month: Int
     let summaries: [DailySummary]
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
-    private let calendar = Calendar.current
+    private var calendar: Calendar {
+        var cal = Calendar.current
+        cal.timeZone = TimeZone(identifier: "UTC")!
+        return cal
+    }
 
     private var weeks: [[Date?]] {
-        guard let firstDate = summaries.first?.dateDisplay,
-              let lastDate = summaries.last?.dateDisplay else {
-            return []
-        }
+        let dateComponents = DateComponents(year: year, month: month, day: 1)
+        guard let firstDay = calendar.date(from: dateComponents) else { return [] }
 
-        let startOfWeek = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: firstDate))!
-        let endDate = calendar.date(byAdding: .day, value: 1, to: lastDate)!
+        // Get range of days in month
+        guard let range = calendar.range(of: .day, in: .month, for: firstDay) else { return [] }
 
-        var result: [[Date?]] = []
+        // Get first weekday (1 = Sunday, 7 = Saturday)
+        let firstWeekday = calendar.component(.weekday, from: firstDay)
+
+        var weeks: [[Date?]] = []
         var currentWeek: [Date?] = []
-        var currentDate = startOfWeek
 
-        // Fill in days before first date
-        let firstWeekday = calendar.component(.weekday, from: startOfWeek)
+        // Fill in empty days before first of month
         for _ in 1..<firstWeekday {
             currentWeek.append(nil)
         }
 
-        while currentDate < endDate {
-            currentWeek.append(currentDate)
+        // Fill in days of month
+        for day in range {
+            let dateComponents = DateComponents(year: year, month: month, day: day)
+            if let date = calendar.date(from: dateComponents) {
+                currentWeek.append(date)
 
-            if currentWeek.count == 7 {
-                result.append(currentWeek)
-                currentWeek = []
+                if currentWeek.count == 7 {
+                    weeks.append(currentWeek)
+                    currentWeek = []
+                }
             }
-
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate)!
         }
 
-        // Fill in remaining days
+        // Fill in remaining days to complete last week
         while !currentWeek.isEmpty && currentWeek.count < 7 {
             currentWeek.append(nil)
         }
         if !currentWeek.isEmpty {
-            result.append(currentWeek)
+            weeks.append(currentWeek)
         }
 
-        return result
+        return weeks
     }
 
     private func stepsForDate(_ date: Date) -> Int64? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
         let dateString = formatter.string(from: date)
 
         return summaries.first(where: { $0.date == dateString })?.steps
@@ -402,6 +292,10 @@ struct CalendarHeatmapView: View {
 
     private func colorForSteps(_ steps: Int64?) -> Color {
         guard let steps = steps else {
+            return Color(.systemGray6)
+        }
+
+        if steps == 0 {
             return Color(.systemGray6)
         }
 
@@ -413,21 +307,24 @@ struct CalendarHeatmapView: View {
         } else if intensity > 0.5 {
             return .blue.opacity(0.7)
         } else if intensity > 0.25 {
-            return .blue.opacity(0.4)
-        } else if intensity > 0 {
-            return .blue.opacity(0.2)
+            return .blue.opacity(0.5)
         } else {
-            return Color(.systemGray6)
+            return .blue.opacity(0.2)
         }
     }
 
+    private func isToday(_ date: Date) -> Bool {
+        calendar.isDateInToday(date)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Weekday labels
+        VStack(spacing: 8) {
+            // Weekday headers
             HStack(spacing: 4) {
                 ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
                     Text(day)
                         .font(.caption2)
+                        .fontWeight(.semibold)
                         .foregroundColor(.secondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -439,44 +336,213 @@ struct CalendarHeatmapView: View {
                     ForEach(0..<7, id: \.self) { dayIndex in
                         if let date = weeks[weekIndex][dayIndex] {
                             let steps = stepsForDate(date)
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(colorForSteps(steps))
-                                .frame(height: 40)
-                                .overlay(
-                                    Text("\(calendar.component(.day, from: date))")
-                                        .font(.caption2)
-                                        .foregroundColor(steps != nil && steps! > 0 ? .white : .secondary)
-                                )
+                            let day = calendar.component(.day, from: date)
+
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(colorForSteps(steps))
+                                    .frame(height: 44)
+
+                                VStack(spacing: 2) {
+                                    Text("\(day)")
+                                        .font(.caption)
+                                        .fontWeight(isToday(date) ? .bold : .regular)
+                                        .foregroundColor(steps ?? 0 > 0 ? .white : .primary)
+
+                                    if let steps = steps, steps > 0 {
+                                        Text("\(steps / 1000)k")
+                                            .font(.system(size: 8))
+                                            .foregroundColor(.white.opacity(0.9))
+                                    }
+                                }
+
+                                if isToday(date) {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(Color.orange, lineWidth: 2)
+                                }
+                            }
                         } else {
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: 8)
                                 .fill(Color.clear)
-                                .frame(height: 40)
+                                .frame(height: 44)
                         }
                     }
                 }
             }
-
-            // Legend
-            HStack(spacing: 8) {
-                Text("Less")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-
-                ForEach([0.0, 0.25, 0.5, 0.75, 1.0], id: \.self) { intensity in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(.blue.opacity(intensity == 0 ? 0.1 : intensity))
-                        .frame(width: 16, height: 16)
-                }
-
-                Text("More")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-            .padding(.top, 4)
         }
+        .padding(.horizontal)
     }
 }
 
-#Preview {
-    StatsView()
+// MARK: - View Model
+
+@MainActor
+class StatsViewModel: ObservableObject {
+    @Published var dailySummaries: [DailySummary] = []
+    @Published var isLoading = false
+    @Published var selectedYear: Int
+    @Published var selectedMonth: Int
+
+    private let apiClient: APIClient
+
+    init() {
+        let config = ServerConfig.load()
+        self.apiClient = APIClient(config: config)
+
+        // Initialize to current month in UTC
+        let calendar = Calendar.current
+        var utcCalendar = calendar
+        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date()
+        self.selectedYear = utcCalendar.component(.year, from: now)
+        self.selectedMonth = utcCalendar.component(.month, from: now)
+    }
+
+    var currentMonthTitle: String {
+        let dateComponents = DateComponents(year: selectedYear, month: selectedMonth)
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+
+        guard let date = calendar.date(from: dateComponents) else {
+            return ""
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: date)
+    }
+
+    var isCurrentMonth: Bool {
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date()
+        let currentYear = calendar.component(.year, from: now)
+        let currentMonth = calendar.component(.month, from: now)
+
+        return selectedYear == currentYear && selectedMonth == currentMonth
+    }
+
+    // Streak calculation
+    var currentStreak: Int {
+        guard !dailySummaries.isEmpty else { return 0 }
+
+        let sorted = dailySummaries.sorted { $0.date > $1.date }
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+
+        var streak = 0
+        var expectedDate = calendar.startOfDay(for: Date())
+
+        for summary in sorted {
+            guard let summaryDate = summary.dateDisplay else { continue }
+            let summaryDay = calendar.startOfDay(for: summaryDate)
+
+            if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
+                streak += 1
+                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
+            } else {
+                break
+            }
+        }
+
+        return streak
+    }
+
+    // This week stats
+    var weekStepsFormatted: String {
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let now = Date()
+        guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
+            return "0"
+        }
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        let weekStartStr = formatter.string(from: weekStart)
+
+        let weekSteps = dailySummaries
+            .filter { $0.date >= weekStartStr }
+            .reduce(0) { $0 + $1.steps }
+
+        return formatSteps(weekSteps)
+    }
+
+    // This month stats
+    var monthStepsFormatted: String {
+        let monthSteps = dailySummaries
+            .filter {
+                guard let date = $0.dateDisplay else { return false }
+                var calendar = Calendar.current
+                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let summaryYear = calendar.component(.year, from: date)
+                let summaryMonth = calendar.component(.month, from: date)
+                return summaryYear == selectedYear && summaryMonth == selectedMonth
+            }
+            .reduce(0) { $0 + $1.steps }
+
+        return formatSteps(monthSteps)
+    }
+
+    // Best day stats
+    var bestDayStepsFormatted: String {
+        let maxSteps = dailySummaries.map { $0.steps }.max() ?? 0
+        return formatSteps(maxSteps)
+    }
+
+    // Last 30 days for chart
+    var last30Days: [DailySummary] {
+        Array(dailySummaries.suffix(30))
+    }
+
+    private func formatSteps(_ steps: Int64) -> String {
+        if steps >= 1000 {
+            let k = Double(steps) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(steps)"
+    }
+
+    func previousMonth() {
+        if selectedMonth == 1 {
+            selectedMonth = 12
+            selectedYear -= 1
+        } else {
+            selectedMonth -= 1
+        }
+    }
+
+    func nextMonth() {
+        guard !isCurrentMonth else { return }
+
+        if selectedMonth == 12 {
+            selectedMonth = 1
+            selectedYear += 1
+        } else {
+            selectedMonth += 1
+        }
+    }
+
+    func loadData() async {
+        isLoading = true
+
+        do {
+            let dates = try await apiClient.fetchActivityDates()
+
+            var loadedSummaries: [DailySummary] = []
+            for date in dates {
+                if let summary = try? await apiClient.fetchDailySummary(date: date) {
+                    loadedSummaries.append(summary)
+                }
+            }
+
+            dailySummaries = loadedSummaries.sorted { $0.date < $1.date }
+        } catch {
+            print("Error loading stats: \(error)")
+        }
+
+        isLoading = false
+    }
 }
