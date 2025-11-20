@@ -273,34 +273,45 @@ class TodayViewModel: ObservableObject {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
     }
 
-    // Check if a workout is completed and ready to sync
-    private func isWorkoutCompleted(_ summary: DailySummary) -> Bool {
-        let calendar = Calendar.current
-        let now = Date()
-
-        // Parse the workout date
-        guard let workoutDate = summary.dateDisplay else { return false }
-
-        // If workout is from a previous day, it's definitely completed
-        if !calendar.isDateInToday(workoutDate) {
+    // Check if today's workout should be synced
+    private func shouldSyncToday(_ summary: DailySummary) -> Bool {
+        // First sync: if there's any activity, sync it
+        if !summary.isSynced && summary.steps > 0 {
             return true
         }
 
-        // For today's workout, check if it's been >2 hours since last activity
+        // If no recent activity tracking, don't sync
         guard let lastChange = lastStepsChangeTime else {
-            // No recent activity detected, consider it completed if workout exists
-            return summary.steps > 0
+            return false
         }
 
+        // Keep syncing while actively walking (< 2 hours since last activity)
         let hoursSinceLastActivity = Date().timeIntervalSince(lastChange) / 3600
-        return hoursSinceLastActivity > 2
+        if hoursSinceLastActivity < 2 {
+            return true
+        }
+
+        // After 2 hours idle, do one final sync if we haven't synced since activity stopped
+        // This ensures the final total is in Apple Health
+        if hoursSinceLastActivity >= 2 && hoursSinceLastActivity < 2.1 {
+            return true
+        }
+
+        // After final sync, stop syncing for the day
+        return false
     }
 
     // Automatically sync completed workouts
     func autoSyncCompletedWorkouts() async {
-        // Find unsynced workouts that are completed
+        // Find workouts that need syncing
         let workoutsToSync = allSummaries.filter { summary in
-            !summary.isSynced && isWorkoutCompleted(summary)
+            // Previous days: only sync if not synced yet (sync once and done)
+            if !summary.isToday {
+                return !summary.isSynced
+            }
+
+            // Today: sync while actively walking, stop after 2 hours idle
+            return shouldSyncToday(summary)
         }
 
         // Silently sync each one
