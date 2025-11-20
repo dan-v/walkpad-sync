@@ -26,7 +26,8 @@ private enum DateFormatters {
     static let yearMonthDay: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC") // Server uses UTC dates
+        // Use local timezone for display purposes
+        formatter.timeZone = TimeZone.current
         return formatter
     }()
 }
@@ -124,13 +125,12 @@ struct DailySummary: Codable, Identifiable {
         guard let dateObj = dateDisplay else { return "" }
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = TimeZone.current
         return formatter.string(from: dateObj)
     }
 
     var isToday: Bool {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let todayStr = DateFormatters.yearMonthDay.string(from: Date())
         return date == todayStr
     }

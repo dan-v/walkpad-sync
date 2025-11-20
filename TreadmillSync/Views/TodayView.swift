@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
+    @State private var autoRefreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -102,6 +103,20 @@ struct TodayView: View {
         }
         .task {
             await viewModel.loadData()
+
+            // Start auto-refresh every 30 seconds for real-time updates
+            autoRefreshTask = Task {
+                while !Task.isCancelled {
+                    try? await Task.sleep(for: .seconds(30))
+                    if !Task.isCancelled {
+                        await viewModel.loadData()
+                    }
+                }
+            }
+        }
+        .onDisappear {
+            // Cancel auto-refresh when view disappears
+            autoRefreshTask?.cancel()
         }
     }
 
@@ -209,8 +224,7 @@ class TodayViewModel: ObservableObject {
         guard !allSummaries.isEmpty else { return 0 }
 
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -231,8 +245,7 @@ class TodayViewModel: ObservableObject {
     }
 
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -240,7 +253,7 @@ class TodayViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = TimeZone.current
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = allSummaries
@@ -283,10 +296,10 @@ class TodayViewModel: ObservableObject {
         error = nil
 
         do {
-            // Get today's date
+            // Get today's date in local timezone
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(identifier: "UTC")
+            formatter.timeZone = TimeZone.current
             let todayStr = formatter.string(from: Date())
 
             // Fetch all dates to get full summaries for streak/week calculation
