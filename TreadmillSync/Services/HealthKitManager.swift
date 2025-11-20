@@ -53,19 +53,12 @@ class HealthKitManager: ObservableObject {
             return
         }
 
-        // Expand query window by 12 hours on each side to catch workouts that might
-        // start/end slightly outside the exact day boundaries due to timezone issues
-        guard let queryStart = calendar.date(byAdding: .hour, value: -12, to: dayStart),
-              let queryEnd = calendar.date(byAdding: .hour, value: 12, to: dayEnd) else {
-            print("❌ Failed to calculate query window")
-            return
-        }
+        // Query for workouts within this exact day
+        print("🔍 Querying workouts from \(dayStart) to \(dayEnd)")
 
-        print("🔍 Querying workouts from \(queryStart) to \(queryEnd)")
-
-        // Query for workouts in this date range (not using strictStartDate to catch overlapping workouts)
+        // Query for workouts in this date range
         let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForSamples(withStart: queryStart, end: queryEnd, options: [])
+        let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: [])
 
         // Create a query to find existing workouts
         let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
