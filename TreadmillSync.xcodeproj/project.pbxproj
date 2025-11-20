@@ -17,6 +17,11 @@
 		3726772B2ECCFBDC0017AC87 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3726771F2ECCFBDC0017AC87 /* OnboardingView.swift */; };
 		3726772C2ECCFBDC0017AC87 /* Workout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677182ECCFBDC0017AC87 /* Workout.swift */; };
 		3726772D2ECCFBDC0017AC87 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3726771B2ECCFBDC0017AC87 /* HealthKitManager.swift */; };
+		3726772E2ECCFBDC0017AC87 /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677242ECCFBDC0017AC88 /* TodayView.swift */; };
+		3726772F2ECCFBDC0017AC87 /* HistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677242ECCFBDC0017AC89 /* HistoryView.swift */; };
+		372677302ECCFBDC0017AC87 /* ActivityDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677242ECCFBDC0017AC8A /* ActivityDetailView.swift */; };
+		372677312ECCFBDC0017AC87 /* ActivityListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677242ECCFBDC0017AC8B /* ActivityListView.swift */; };
+		372677322ECCFBDC0017AC87 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677242ECCFBDC0017AC8C /* StatsView.swift */; };
 		AA000001 /* TreadmillSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* TreadmillSyncApp.swift */; };
 		BB000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000014 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -32,6 +37,11 @@
 		372677202ECCFBDC0017AC87 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		372677212ECCFBDC0017AC87 /* WorkoutDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutDetailView.swift; sourceTree = "<group>"; };
 		372677222ECCFBDC0017AC87 /* WorkoutListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutListView.swift; sourceTree = "<group>"; };
+		372677242ECCFBDC0017AC88 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		372677242ECCFBDC0017AC89 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
+		372677242ECCFBDC0017AC8A /* ActivityDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityDetailView.swift; sourceTree = "<group>"; };
+		372677242ECCFBDC0017AC8B /* ActivityListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityListView.swift; sourceTree = "<group>"; };
+		372677242ECCFBDC0017AC8C /* StatsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsView.swift; sourceTree = "<group>"; };
 		BB000001 /* TreadmillSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreadmillSyncApp.swift; sourceTree = "<group>"; };
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB000012 /* TreadmillSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TreadmillSync.entitlements; sourceTree = "<group>"; };
@@ -78,6 +88,11 @@
 				372677202ECCFBDC0017AC87 /* SettingsView.swift */,
 				372677212ECCFBDC0017AC87 /* WorkoutDetailView.swift */,
 				372677222ECCFBDC0017AC87 /* WorkoutListView.swift */,
+				372677242ECCFBDC0017AC88 /* TodayView.swift */,
+				372677242ECCFBDC0017AC89 /* HistoryView.swift */,
+				372677242ECCFBDC0017AC8A /* ActivityDetailView.swift */,
+				372677242ECCFBDC0017AC8B /* ActivityListView.swift */,
+				372677242ECCFBDC0017AC8C /* StatsView.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -193,6 +208,11 @@
 				3726772B2ECCFBDC0017AC87 /* OnboardingView.swift in Sources */,
 				3726772C2ECCFBDC0017AC87 /* Workout.swift in Sources */,
 				3726772D2ECCFBDC0017AC87 /* HealthKitManager.swift in Sources */,
+				3726772E2ECCFBDC0017AC87 /* TodayView.swift in Sources */,
+				3726772F2ECCFBDC0017AC87 /* HistoryView.swift in Sources */,
+				372677302ECCFBDC0017AC87 /* ActivityDetailView.swift in Sources */,
+				372677312ECCFBDC0017AC87 /* ActivityListView.swift in Sources */,
+				372677322ECCFBDC0017AC87 /* StatsView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

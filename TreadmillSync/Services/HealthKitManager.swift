@@ -130,7 +130,7 @@ class HealthKitManager: ObservableObject {
 
         // End collection and finish workout
         try await builder.endCollection(at: endDate)
-        let workout = try await builder.finishWorkout()
+        _ = try await builder.finishWorkout()
     }
 }
 
