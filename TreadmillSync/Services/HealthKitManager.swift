@@ -105,6 +105,7 @@ class HealthKitManager: ObservableObject {
         let endDate = lastSample.date
 
         print("📅 Workout times: \(startDate) to \(endDate)")
+        print("📊 Summary: \(steps) steps, \(distanceMeters)m, \(calories) cal from \(samples.count) samples")
 
         // Delete any existing workouts for this date first (prevents duplicates)
         try await deleteExistingWorkouts(for: date)
@@ -132,6 +133,10 @@ class HealthKitManager: ObservableObject {
         var lastCalories: Int64 = 0
         var lastSteps: Int64 = 0
 
+        var totalDistanceAdded: Double = 0
+        var totalCaloriesAdded: Double = 0
+        var totalStepsAdded: Double = 0
+
         for sample in samples {
             let sampleDate = sample.date
 
@@ -147,6 +152,7 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(distanceSample)
+                    totalDistanceAdded += Double(delta)
                 }
                 lastDistance = distanceTotal
             }
@@ -163,6 +169,7 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(energySample)
+                    totalCaloriesAdded += Double(delta)
                 }
                 lastCalories = caloriesTotal
             }
@@ -179,10 +186,16 @@ class HealthKitManager: ObservableObject {
                         end: sampleDate
                     )
                     workoutSamples.append(stepSample)
+                    totalStepsAdded += Double(delta)
                 }
                 lastSteps = stepsTotal
             }
         }
+
+        print("🔢 Created \(workoutSamples.count) HealthKit samples:")
+        print("   Distance: \(totalDistanceAdded)m (expected: \(distanceMeters)m)")
+        print("   Calories: \(totalCaloriesAdded) (expected: \(calories))")
+        print("   Steps: \(totalStepsAdded) (expected: \(steps))")
 
         // Add samples to workout
         if !workoutSamples.isEmpty {
