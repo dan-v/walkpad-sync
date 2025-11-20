@@ -28,13 +28,26 @@ struct StatsView: View {
                 }
                 .padding(.vertical)
             }
-            .navigationTitle("Stats")
+            .navigationBarTitleDisplayMode(.inline)
             .refreshable {
                 await viewModel.loadData()
             }
         }
         .task {
             await viewModel.loadData()
+        }
+        .sheet(item: $viewModel.selectedDaySummary) { summary in
+            NavigationStack {
+                ActivityDetailView(summary: summary)
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Done") {
+                                viewModel.selectedDaySummary = nil
+                            }
+                        }
+                    }
+            }
         }
     }
 
@@ -112,7 +125,10 @@ struct StatsView: View {
             MonthCalendarView(
                 year: viewModel.selectedYear,
                 month: viewModel.selectedMonth,
-                summaries: viewModel.dailySummaries
+                summaries: viewModel.dailySummaries,
+                onDayTap: { summary in
+                    viewModel.selectedDaySummary = summary
+                }
             )
         }
         .padding()
@@ -196,17 +212,14 @@ struct StatSummaryCard: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .foregroundColor(color)
-                    .font(.title3)
-                Spacer()
-            }
+        VStack(alignment: .leading, spacing: 4) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.title3)
 
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 0) {
                 Text(value)
-                    .font(.title2)
+                    .font(.title3)
                     .fontWeight(.bold)
                 Text(subtitle)
                     .font(.caption2)
@@ -214,13 +227,13 @@ struct StatSummaryCard: View {
             }
 
             Text(title)
-                .font(.caption)
+                .font(.caption2)
                 .foregroundColor(.secondary)
         }
-        .padding()
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(10)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
 }
@@ -231,6 +244,7 @@ struct MonthCalendarView: View {
     let year: Int
     let month: Int
     let summaries: [DailySummary]
+    let onDayTap: (DailySummary) -> Void
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
     private var calendar: Calendar {
@@ -290,6 +304,15 @@ struct MonthCalendarView: View {
         return summaries.first(where: { $0.date == dateString })?.steps
     }
 
+    private func summaryForDate(_ date: Date) -> DailySummary? {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        let dateString = formatter.string(from: date)
+
+        return summaries.first(where: { $0.date == dateString })
+    }
+
     private func colorForSteps(_ steps: Int64?) -> Color {
         guard let steps = steps else {
             return Color(.systemGray6)
@@ -337,30 +360,39 @@ struct MonthCalendarView: View {
                         if let date = weeks[weekIndex][dayIndex] {
                             let steps = stepsForDate(date)
                             let day = calendar.component(.day, from: date)
+                            let daySummary = summaryForDate(date)
 
-                            ZStack {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(colorForSteps(steps))
-                                    .frame(height: 44)
+                            Button {
+                                if let summary = daySummary {
+                                    onDayTap(summary)
+                                }
+                            } label: {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(colorForSteps(steps))
+                                        .frame(height: 44)
 
-                                VStack(spacing: 2) {
-                                    Text("\(day)")
-                                        .font(.caption)
-                                        .fontWeight(isToday(date) ? .bold : .regular)
-                                        .foregroundColor(steps ?? 0 > 0 ? .white : .primary)
+                                    VStack(spacing: 2) {
+                                        Text("\(day)")
+                                            .font(.caption)
+                                            .fontWeight(isToday(date) ? .bold : .regular)
+                                            .foregroundColor(steps ?? 0 > 0 ? .white : .primary)
 
-                                    if let steps = steps, steps > 0 {
-                                        Text("\(steps / 1000)k")
-                                            .font(.system(size: 8))
-                                            .foregroundColor(.white.opacity(0.9))
+                                        if let steps = steps, steps > 0 {
+                                            Text("\(steps / 1000)k")
+                                                .font(.system(size: 8))
+                                                .foregroundColor(.white.opacity(0.9))
+                                        }
+                                    }
+
+                                    if isToday(date) {
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(Color.orange, lineWidth: 2)
                                     }
                                 }
-
-                                if isToday(date) {
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Color.orange, lineWidth: 2)
-                                }
                             }
+                            .buttonStyle(.plain)
+                            .disabled(daySummary == nil)
                         } else {
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Color.clear)
@@ -382,6 +414,7 @@ class StatsViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var selectedYear: Int
     @Published var selectedMonth: Int
+    @Published var selectedDaySummary: DailySummary?
 
     private let apiClient: APIClient
 

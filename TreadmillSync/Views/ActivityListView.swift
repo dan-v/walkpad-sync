@@ -25,19 +25,29 @@ struct ActivityListView: View {
                         Text("Start walking on your treadmill to see your activity here.")
                     }
                 } else {
-                    List(viewModel.summaries) { summary in
-                        NavigationLink {
-                            ActivityDetailView(summary: summary)
-                        } label: {
-                            ActivityRow(summary: summary)
+                    VStack(spacing: 0) {
+                        // Quick summary header
+                        if !viewModel.summaries.isEmpty {
+                            quickSummaryHeader
+                                .padding()
+                                .background(Color(.systemGroupedBackground))
                         }
-                    }
-                    .refreshable {
-                        await viewModel.loadActivities()
+
+                        List(viewModel.recentSummaries) { summary in
+                            NavigationLink {
+                                ActivityDetailView(summary: summary)
+                            } label: {
+                                ActivityRow(summary: summary)
+                            }
+                        }
+                        .listStyle(.plain)
+                        .refreshable {
+                            await viewModel.loadActivities()
+                        }
                     }
                 }
             }
-            .navigationTitle("Activity")
+            .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
                     Button {
@@ -52,6 +62,69 @@ struct ActivityListView: View {
         .task {
             await viewModel.loadActivities()
         }
+    }
+
+    private var quickSummaryHeader: some View {
+        VStack(spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Recent Activity")
+                        .font(.headline)
+                    Text("Last 30 days")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                Spacer()
+            }
+
+            HStack(spacing: 12) {
+                SummaryBadge(
+                    value: "\(viewModel.totalDays)",
+                    label: "days",
+                    icon: "calendar",
+                    color: .blue
+                )
+                SummaryBadge(
+                    value: viewModel.totalStepsFormatted,
+                    label: "steps",
+                    icon: "figure.walk",
+                    color: .green
+                )
+                SummaryBadge(
+                    value: viewModel.totalDistanceFormatted,
+                    label: "miles",
+                    icon: "ruler",
+                    color: .orange
+                )
+            }
+        }
+    }
+}
+
+struct SummaryBadge: View {
+    let value: String
+    let label: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .foregroundColor(color)
+                .font(.title3)
+
+            Text(value)
+                .font(.title3)
+                .fontWeight(.bold)
+
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
     }
 }
 
@@ -119,6 +192,29 @@ class ActivityViewModel: ObservableObject {
     init() {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
+    }
+
+    var recentSummaries: [DailySummary] {
+        Array(summaries.prefix(30))
+    }
+
+    var totalDays: Int {
+        recentSummaries.count
+    }
+
+    var totalStepsFormatted: String {
+        let total = recentSummaries.reduce(0) { $0 + $1.steps }
+        if total >= 1000 {
+            let k = Double(total) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(total)"
+    }
+
+    var totalDistanceFormatted: String {
+        let totalMeters = recentSummaries.reduce(0) { $0 + $1.distanceMeters }
+        let miles = Double(totalMeters) / 1609.34
+        return String(format: "%.1f", miles)
     }
 
     func loadActivities() async {
