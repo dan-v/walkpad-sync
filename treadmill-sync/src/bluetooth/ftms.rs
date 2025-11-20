@@ -362,12 +362,40 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Steps format: 16-bit little-endian in bytes[3] and bytes[4]
             // Note: Steps appears to actually use 16 bits (unlike distance/calories)
             if data.len() < 5 {
-                return Err(anyhow!("LifeSpan steps data too short"));
+                return Err(anyhow!("LifeSpan steps data too short: {} bytes", data.len()));
             }
-            let steps = u16::from_le_bytes([data[3], data[4]]);
-            debug!("LifeSpan steps: {} (raw bytes: [0x{:02X}, 0x{:02X}])",
-                   steps, data[3], data[4]);
-            result.steps = Some(steps);
+
+            // VERBOSE DEBUG: Log entire response for steps
+            warn!("🚶 STEPS RAW RESPONSE: full_buffer={:02X?} (length={})", data, data.len());
+            warn!("🚶 STEPS BYTE ANALYSIS:");
+            for (i, byte) in data.iter().enumerate() {
+                warn!("    byte[{}] = 0x{:02X} (decimal: {})", i, byte, byte);
+            }
+
+            // Try parsing as 16-bit little-endian
+            let steps_u16 = u16::from_le_bytes([data[3], data[4]]);
+            warn!("🚶 STEPS PARSED (u16 LE): {} from bytes [0x{:02X}, 0x{:02X}]",
+                   steps_u16, data[3], data[4]);
+
+            // Also try other interpretations
+            if data.len() >= 5 {
+                let alt_u16_be = u16::from_be_bytes([data[3], data[4]]);
+                let alt_u8 = data[3] as u16;
+                let alt_3bytes = if data.len() >= 6 {
+                    Some((data[3] as u32) | ((data[4] as u32) << 8) | ((data[5] as u32) << 16))
+                } else {
+                    None
+                };
+
+                warn!("🚶 STEPS ALTERNATIVE INTERPRETATIONS:");
+                warn!("    As u16 big-endian [3,4]: {}", alt_u16_be);
+                warn!("    As u8 byte[3] only: {}", alt_u8);
+                if let Some(val) = alt_3bytes {
+                    warn!("    As u24 [3,4,5]: {}", val);
+                }
+            }
+
+            result.steps = Some(steps_u16);
         }
 
         LifeSpanQuery::Time => {
