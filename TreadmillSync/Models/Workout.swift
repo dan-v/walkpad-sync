@@ -26,6 +26,7 @@ private enum DateFormatters {
     static let yearMonthDay: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC") // Server uses UTC dates
         return formatter
     }()
 }
