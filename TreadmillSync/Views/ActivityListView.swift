@@ -83,7 +83,7 @@ struct ActivityRow: View {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                             .imageScale(.large)
-                        if let syncTime = summary.syncedAtFormatted {
+                        if let syncTime = summary.syncedAtShort {
                             Text(syncTime)
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)

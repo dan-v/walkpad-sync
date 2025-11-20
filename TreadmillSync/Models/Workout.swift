@@ -111,6 +111,14 @@ struct DailySummary: Codable, Identifiable {
         formatter.unitsStyle = .full
         return "Synced " + formatter.localizedString(for: date, relativeTo: Date())
     }
+
+    var syncedAtShort: String? {
+        guard let syncedAt = syncedAt else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
 }
 
 struct SamplesResponse: Codable {
