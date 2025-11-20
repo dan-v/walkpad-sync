@@ -47,6 +47,7 @@ struct DailySummary: Codable, Identifiable {
     let avgSpeed: Double // m/s
     let maxSpeed: Double
     let isSynced: Bool
+    let syncedAt: Int64? // Unix timestamp when synced (nil if not synced)
 
     var id: String { date }
 
@@ -60,6 +61,7 @@ struct DailySummary: Codable, Identifiable {
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
         case isSynced = "is_synced"
+        case syncedAt = "synced_at"
     }
 
     // Computed properties for display
@@ -100,6 +102,14 @@ struct DailySummary: Codable, Identifiable {
     var avgSpeedFormatted: String {
         let mph = avgSpeed * 2.23694 // m/s to mph
         return String(format: "%.1f mph", mph)
+    }
+
+    var syncedAtFormatted: String? {
+        guard let syncedAt = syncedAt else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Synced " + formatter.localizedString(for: date, relativeTo: Date())
     }
 }
 

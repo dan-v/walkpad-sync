@@ -59,28 +59,49 @@ struct ActivityRow: View {
     let summary: DailySummary
 
     var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(summary.dateFormatted)
-                    .font(.headline)
+        VStack(spacing: 8) {
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(summary.dateFormatted)
+                        .font(.headline)
 
-                HStack(spacing: 12) {
-                    Label(summary.stepsFormatted, systemImage: "figure.walk")
-                        .font(.subheadline)
-                    Label(summary.distanceFormatted, systemImage: "ruler")
-                        .font(.subheadline)
+                    HStack(spacing: 12) {
+                        Label(summary.stepsFormatted, systemImage: "figure.walk")
+                            .font(.subheadline)
+                        Label(summary.distanceFormatted, systemImage: "ruler")
+                            .font(.subheadline)
+                        Label(summary.caloriesFormatted, systemImage: "flame.fill")
+                            .font(.subheadline)
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
-            }
 
-            Spacer()
+                Spacer()
 
-            if summary.isSynced {
-                Image(systemName: "checkmark.circle.fill")
-                    .foregroundStyle(.green)
-            } else {
-                Image(systemName: "icloud.and.arrow.up")
-                    .foregroundStyle(.blue)
+                VStack(alignment: .trailing, spacing: 4) {
+                    if summary.isSynced {
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                            .imageScale(.large)
+                        if let syncTime = summary.syncedAtFormatted {
+                            Text(syncTime)
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.trailing)
+                        } else {
+                            Text("Synced")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Image(systemName: "icloud.and.arrow.up")
+                            .foregroundStyle(.blue)
+                            .imageScale(.large)
+                        Text("Tap to sync")
+                            .font(.caption2)
+                            .foregroundStyle(.blue)
+                    }
+                }
             }
         }
         .padding(.vertical, 4)

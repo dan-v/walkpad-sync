@@ -33,6 +33,7 @@ pub struct DailySummary {
     pub avg_speed: f64,          // m/s
     pub max_speed: f64,
     pub is_synced: bool,
+    pub synced_at: Option<i64>,  // Unix timestamp when synced (None if not synced)
 }
 
 /// Health sync record
@@ -186,8 +187,9 @@ impl Storage {
 
         let duration_seconds = last_timestamp - first_timestamp;
 
-        // Check if this date has been synced
-        let is_synced = self.is_date_synced(&date_str).await?;
+        // Check if this date has been synced and get timestamp
+        let synced_at = self.get_sync_timestamp(&date_str).await?;
+        let is_synced = synced_at.is_some();
 
         Ok(Some(DailySummary {
             date: date_str,
@@ -199,6 +201,7 @@ impl Storage {
             avg_speed,
             max_speed,
             is_synced,
+            synced_at,
         }))
     }
 
@@ -242,6 +245,16 @@ impl Storage {
             .await?;
 
         Ok(row.is_some())
+    }
+
+    /// Get sync info for a date (returns timestamp if synced)
+    pub async fn get_sync_timestamp(&self, date: &str) -> Result<Option<i64>> {
+        let row = sqlx::query("SELECT synced_at FROM health_syncs WHERE sync_date = ?")
+            .bind(date)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(row.map(|r| r.get("synced_at")))
     }
 
     /// Get all synced dates
