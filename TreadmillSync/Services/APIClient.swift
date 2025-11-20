@@ -89,7 +89,16 @@ actor APIClient {
     // MARK: - Samples
 
     func fetchSamples(date: String) async throws -> [TreadmillSample] {
-        guard let url = URL(string: "\(config.baseURL)/api/dates/\(date)/samples") else {
+        guard var urlComponents = URLComponents(string: "\(config.baseURL)/api/dates/\(date)/samples") else {
+            throw APIError.invalidURL
+        }
+
+        // Add timezone offset query parameter
+        urlComponents.queryItems = [
+            URLQueryItem(name: "tz_offset", value: "\(timezoneOffsetSeconds)")
+        ]
+
+        guard let url = urlComponents.url else {
             throw APIError.invalidURL
         }
 
