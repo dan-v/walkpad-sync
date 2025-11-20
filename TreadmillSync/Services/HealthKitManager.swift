@@ -128,11 +128,7 @@ class HealthKitManager: ObservableObject {
         // Add samples to builder
         var workoutSamples: [HKSample] = []
 
-        // Process samples to create deltas (HealthKit wants changes, not cumulative values)
-        var lastDistance: Int64 = 0
-        var lastCalories: Int64 = 0
-        var lastSteps: Int64 = 0
-
+        // Use pre-calculated deltas from the backend (not cumulative values!)
         var totalDistanceAdded: Double = 0
         var totalCaloriesAdded: Double = 0
         var totalStepsAdded: Double = 0
@@ -140,9 +136,8 @@ class HealthKitManager: ObservableObject {
         for sample in samples {
             let sampleDate = sample.date
 
-            // Distance delta
-            if let distanceTotal = sample.distanceTotal, distanceTotal > lastDistance {
-                let delta = distanceTotal - lastDistance
+            // Use distance_delta (already calculated by backend)
+            if let delta = sample.distanceDelta, delta > 0 {
                 if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
                     let quantity = HKQuantity(unit: .meter(), doubleValue: Double(delta))
                     let distanceSample = HKQuantitySample(
@@ -154,12 +149,10 @@ class HealthKitManager: ObservableObject {
                     workoutSamples.append(distanceSample)
                     totalDistanceAdded += Double(delta)
                 }
-                lastDistance = distanceTotal
             }
 
-            // Energy delta
-            if let caloriesTotal = sample.caloriesTotal, caloriesTotal > lastCalories {
-                let delta = caloriesTotal - lastCalories
+            // Use calories_delta (already calculated by backend)
+            if let delta = sample.caloriesDelta, delta > 0 {
                 if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
                     let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: Double(delta))
                     let energySample = HKQuantitySample(
@@ -171,12 +164,10 @@ class HealthKitManager: ObservableObject {
                     workoutSamples.append(energySample)
                     totalCaloriesAdded += Double(delta)
                 }
-                lastCalories = caloriesTotal
             }
 
-            // Steps delta
-            if let stepsTotal = sample.stepsTotal, stepsTotal > lastSteps {
-                let delta = stepsTotal - lastSteps
+            // Use steps_delta (already calculated by backend)
+            if let delta = sample.stepsDelta, delta > 0 {
                 if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
                     let quantity = HKQuantity(unit: .count(), doubleValue: Double(delta))
                     let stepSample = HKQuantitySample(
@@ -188,7 +179,6 @@ class HealthKitManager: ObservableObject {
                     workoutSamples.append(stepSample)
                     totalStepsAdded += Double(delta)
                 }
-                lastSteps = stepsTotal
             }
         }
 

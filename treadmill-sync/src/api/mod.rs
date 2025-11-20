@@ -94,9 +94,12 @@ struct SamplesResponse {
 struct SampleResponse {
     timestamp: i64,           // Unix epoch
     speed: Option<f64>,       // m/s
-    distance_total: Option<i64>,
-    calories_total: Option<i64>,
-    steps_total: Option<i64>,
+    distance_total: Option<i64>,  // Cumulative (for debugging)
+    calories_total: Option<i64>,  // Cumulative (for debugging)
+    steps_total: Option<i64>,     // Cumulative (for debugging)
+    distance_delta: Option<i64>,  // Delta since last sample (USE THIS!)
+    calories_delta: Option<i64>,  // Delta since last sample (USE THIS!)
+    steps_delta: Option<i64>,     // Delta since last sample (USE THIS!)
 }
 
 impl From<TreadmillSample> for SampleResponse {
@@ -107,6 +110,9 @@ impl From<TreadmillSample> for SampleResponse {
             distance_total: s.distance_total,
             calories_total: s.calories_total,
             steps_total: s.steps_total,
+            distance_delta: s.distance_delta,
+            calories_delta: s.calories_delta,
+            steps_delta: s.steps_delta,
         }
     }
 }
