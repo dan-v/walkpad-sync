@@ -200,6 +200,7 @@ class TodayViewModel: ObservableObject {
     @Published var lastFetchTime: Date?
     @Published var previousSteps: Int64 = 0
     @Published var lastStepsChangeTime: Date?
+    @Published var lastSyncedSteps: Int64 = 0  // Track what we last synced to Apple Health
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -217,6 +218,23 @@ class TodayViewModel: ObservableObject {
         // If steps increased within the last 60 seconds, workout is ongoing
         let timeSinceLastChange = Date().timeIntervalSince(lastChange)
         return timeSinceLastChange < 60
+    }
+
+    // Simple check: should we sync today?
+    private func shouldSyncToday(_ summary: DailySummary) -> Bool {
+        // Don't sync if no activity yet
+        guard summary.steps > 0 else { return false }
+
+        // Don't sync if been idle for > 2 hours (workout is done)
+        if let lastChange = lastStepsChangeTime {
+            let hoursSinceLastActivity = Date().timeIntervalSince(lastChange) / 3600
+            if hoursSinceLastActivity > 2 {
+                return false
+            }
+        }
+
+        // Only sync if steps actually increased since last sync
+        return summary.steps > lastSyncedSteps
     }
 
     var currentStreak: Int {
@@ -273,35 +291,7 @@ class TodayViewModel: ObservableObject {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
     }
 
-    // Check if today's workout should be synced
-    private func shouldSyncToday(_ summary: DailySummary) -> Bool {
-        // First sync: if there's any activity, sync it
-        if !summary.isSynced && summary.steps > 0 {
-            return true
-        }
-
-        // If no recent activity tracking, don't sync
-        guard let lastChange = lastStepsChangeTime else {
-            return false
-        }
-
-        // Keep syncing while actively walking (< 2 hours since last activity)
-        let hoursSinceLastActivity = Date().timeIntervalSince(lastChange) / 3600
-        if hoursSinceLastActivity < 2 {
-            return true
-        }
-
-        // After 2 hours idle, do one final sync if we haven't synced since activity stopped
-        // This ensures the final total is in Apple Health
-        if hoursSinceLastActivity >= 2 && hoursSinceLastActivity < 2.1 {
-            return true
-        }
-
-        // After final sync, stop syncing for the day
-        return false
-    }
-
-    // Automatically sync completed workouts
+    // Automatically sync workouts
     func autoSyncCompletedWorkouts() async {
         // Find workouts that need syncing
         let workoutsToSync = allSummaries.filter { summary in
@@ -310,7 +300,7 @@ class TodayViewModel: ObservableObject {
                 return !summary.isSynced
             }
 
-            // Today: sync while actively walking, stop after 2 hours idle
+            // Today: only sync if steps increased since last sync
             return shouldSyncToday(summary)
         }
 
@@ -328,6 +318,11 @@ class TodayViewModel: ObservableObject {
                 )
 
                 try await apiClient.markDateSynced(date: summary.date)
+
+                // Update last synced steps to avoid re-syncing same data
+                if summary.isToday {
+                    lastSyncedSteps = summary.steps
+                }
             } catch {
                 // Silently fail - will retry next time
                 continue
