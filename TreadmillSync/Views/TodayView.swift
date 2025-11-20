@@ -12,6 +12,28 @@ struct TodayView: View {
                         ProgressView("Loading...")
                             .padding()
                     } else if let todaySummary = viewModel.todaySummary {
+                        // Workout status indicator
+                        if viewModel.isWorkoutOngoing {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                Text("Active workout detected")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "bolt.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.green)
+                                Text("Refreshing every 3s")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
                         // Date header
                         Text("TODAY")
                             .font(.caption)
@@ -223,6 +245,8 @@ class TodayViewModel: ObservableObject {
     @Published var isSyncing = false
     @Published var error: String?
     @Published var lastFetchTime: Date?
+    @Published var previousSteps: Int64 = 0
+    @Published var lastStepsChangeTime: Date?
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -235,19 +259,11 @@ class TodayViewModel: ObservableObject {
     // Check if a workout is likely ongoing based on recent activity
     var isWorkoutOngoing: Bool {
         guard let summary = todaySummary else { return false }
+        guard let lastChange = lastStepsChangeTime else { return false }
 
-        // If we have a summary and it was fetched recently (within last 10 seconds),
-        // and it has recent samples, consider workout as ongoing
-        guard let lastFetch = lastFetchTime else { return false }
-
-        // If last fetch was more than 30 seconds ago, we don't know
-        let timeSinceLastFetch = Date().timeIntervalSince(lastFetch)
-        if timeSinceLastFetch > 30 {
-            return false
-        }
-
-        // If we have steps/activity today, assume workout might be ongoing
-        return summary.steps > 0
+        // If steps increased within the last 60 seconds, workout is ongoing
+        let timeSinceLastChange = Date().timeIntervalSince(lastChange)
+        return timeSinceLastChange < 60
     }
 
     var currentStreak: Int {
@@ -348,9 +364,17 @@ class TodayViewModel: ObservableObject {
 
             allSummaries = loadedSummaries
 
-            // Find today's summary
-            let previousSteps = todaySummary?.steps ?? 0
-            todaySummary = loadedSummaries.first(where: { $0.date == todayStr })
+            // Find today's summary and detect if steps increased (workout ongoing)
+            let newSummary = loadedSummaries.first(where: { $0.date == todayStr })
+            let newSteps = newSummary?.steps ?? 0
+
+            // If steps increased since last fetch, update last change time
+            if newSteps > previousSteps {
+                lastStepsChangeTime = Date()
+            }
+
+            previousSteps = newSteps
+            todaySummary = newSummary
 
             // Track fetch time for workout detection
             lastFetchTime = Date()
