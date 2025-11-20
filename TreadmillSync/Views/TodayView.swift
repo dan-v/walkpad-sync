@@ -104,10 +104,13 @@ struct TodayView: View {
         .task {
             await viewModel.loadData()
 
-            // Start auto-refresh every 3 seconds for real-time updates
+            // Smart auto-refresh: fast during workout, slow otherwise
             autoRefreshTask = Task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(3))
+                    // Use fast refresh (3s) if workout is ongoing, otherwise slow (30s)
+                    let refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
+                    try? await Task.sleep(for: .seconds(refreshInterval))
+
                     if !Task.isCancelled {
                         // Don't show loading indicator during background refresh
                         await viewModel.loadData(showLoading: false)
@@ -115,7 +118,14 @@ struct TodayView: View {
                 }
             }
         }
+        .onAppear {
+            // Keep screen awake while on Today page
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
         .onDisappear {
+            // Re-enable auto-lock when leaving Today page
+            UIApplication.shared.isIdleTimerDisabled = false
+
             // Cancel auto-refresh when view disappears
             autoRefreshTask?.cancel()
         }
@@ -212,6 +222,7 @@ class TodayViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isSyncing = false
     @Published var error: String?
+    @Published var lastFetchTime: Date?
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -219,6 +230,24 @@ class TodayViewModel: ObservableObject {
     init() {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
+    }
+
+    // Check if a workout is likely ongoing based on recent activity
+    var isWorkoutOngoing: Bool {
+        guard let summary = todaySummary else { return false }
+
+        // If we have a summary and it was fetched recently (within last 10 seconds),
+        // and it has recent samples, consider workout as ongoing
+        guard let lastFetch = lastFetchTime else { return false }
+
+        // If last fetch was more than 30 seconds ago, we don't know
+        let timeSinceLastFetch = Date().timeIntervalSince(lastFetch)
+        if timeSinceLastFetch > 30 {
+            return false
+        }
+
+        // If we have steps/activity today, assume workout might be ongoing
+        return summary.steps > 0
     }
 
     var currentStreak: Int {
@@ -320,7 +349,11 @@ class TodayViewModel: ObservableObject {
             allSummaries = loadedSummaries
 
             // Find today's summary
+            let previousSteps = todaySummary?.steps ?? 0
             todaySummary = loadedSummaries.first(where: { $0.date == todayStr })
+
+            // Track fetch time for workout detection
+            lastFetchTime = Date()
 
         } catch {
             self.error = error.localizedDescription
