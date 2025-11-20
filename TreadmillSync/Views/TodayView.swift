@@ -72,6 +72,18 @@ struct TodayView: View {
                         }
                         .padding(.horizontal)
 
+                        // Recent trend
+                        if viewModel.last7Days.count > 1 {
+                            VStack(alignment: .leading, spacing: 12) {
+                                Text("Last 7 Days")
+                                    .font(.headline)
+                                    .padding(.horizontal)
+
+                                recentTrendBars
+                            }
+                            .padding(.top, 8)
+                        }
+
                     } else {
                         // No activity today
                         ContentUnavailableView {
@@ -90,6 +102,41 @@ struct TodayView: View {
         }
         .task {
             await viewModel.loadData()
+        }
+    }
+
+    private var recentTrendBars: some View {
+        let maxSteps = viewModel.last7Days.map { $0.steps }.max() ?? 1
+
+        return VStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
+                ForEach(viewModel.last7Days) { summary in
+                    VStack(spacing: 4) {
+                        // Bar
+                        let height = maxSteps > 0 ? CGFloat(summary.steps) / CGFloat(maxSteps) * 80 : 0
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(summary.isToday ? Color.blue : Color.blue.opacity(0.5))
+                            .frame(height: max(height, 4))
+
+                        // Day label
+                        Text(summary.dayOfWeek)
+                            .font(.caption2)
+                            .foregroundColor(summary.isToday ? .blue : .secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .frame(height: 100)
+            .padding(.horizontal)
+
+            // Legend
+            HStack {
+                Text("Daily average: \(viewModel.dailyAverageFormatted)")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal)
         }
     }
 }
@@ -213,6 +260,22 @@ class TodayViewModel: ObservableObject {
 
     var unsyncedSummaries: [DailySummary] {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
+    }
+
+    var last7Days: [DailySummary] {
+        Array(allSummaries.suffix(7))
+    }
+
+    var dailyAverageFormatted: String {
+        guard !last7Days.isEmpty else { return "0" }
+        let totalSteps = last7Days.reduce(0) { $0 + $1.steps }
+        let average = totalSteps / Int64(last7Days.count)
+
+        if average >= 1000 {
+            let k = Double(average) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(average)"
     }
 
     func loadData() async {
