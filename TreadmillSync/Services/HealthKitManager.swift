@@ -35,21 +35,27 @@ class HealthKitManager: ObservableObject {
 
     /// Delete any existing workouts for a specific date to prevent duplicates
     private func deleteExistingWorkouts(for date: String) async throws {
+        print("🗑️ Checking for existing workouts on \(date)")
+
         // Parse the date string to get start/end of day
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.timeZone = TimeZone.current
 
         guard let dayStart = formatter.date(from: date) else {
+            print("❌ Failed to parse date: \(date)")
             return
         }
 
         let calendar = Calendar.current
         guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            print("❌ Failed to calculate day end")
             return
         }
 
-        // Query for workouts in this date range with our app's metadata
+        print("🔍 Querying workouts from \(dayStart) to \(dayEnd)")
+
+        // Query for workouts in this date range
         let workoutType = HKObjectType.workoutType()
         let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: .strictStartDate)
 
@@ -57,11 +63,13 @@ class HealthKitManager: ObservableObject {
         let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
             let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
                 if let error = error {
+                    print("❌ Query error: \(error)")
                     continuation.resume(throwing: error)
                     return
                 }
 
                 let workouts = samples as? [HKWorkout] ?? []
+                print("📊 Found \(workouts.count) existing workouts")
                 continuation.resume(returning: workouts)
             }
 
@@ -70,7 +78,11 @@ class HealthKitManager: ObservableObject {
 
         // Delete all found workouts
         if !workouts.isEmpty {
+            print("🗑️ Deleting \(workouts.count) existing workouts")
             try await healthStore.delete(workouts)
+            print("✅ Deleted successfully")
+        } else {
+            print("ℹ️ No existing workouts to delete")
         }
     }
 

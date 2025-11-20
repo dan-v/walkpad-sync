@@ -111,10 +111,13 @@ class ActivityDetailViewModel: ObservableObject {
         error = nil
 
         do {
+            print("🔄 Syncing \(summary.date) - Steps: \(summary.steps), Distance: \(summary.distanceMeters)m")
+
             // Fetch samples for this date
             let samples = try await apiClient.fetchSamples(date: summary.date)
+            print("✅ Fetched \(samples.count) samples")
 
-            // Sync to HealthKit
+            // Sync to HealthKit (this will delete existing workouts first)
             try await healthKitManager.saveWorkout(
                 date: summary.date,
                 samples: samples,
@@ -122,13 +125,21 @@ class ActivityDetailViewModel: ObservableObject {
                 calories: summary.calories,
                 steps: summary.steps
             )
+            print("✅ Saved to HealthKit")
 
             // Mark as synced on server
             try await apiClient.markDateSynced(date: summary.date)
+            print("✅ Marked as synced on server")
 
             showSuccessAlert = true
         } catch {
-            self.error = error.localizedDescription
+            print("❌ Sync error: \(error)")
+            // Show detailed error message
+            if let apiError = error as? APIError {
+                self.error = "API Error: \(apiError.localizedDescription)"
+            } else {
+                self.error = "Error: \(error.localizedDescription)"
+            }
         }
 
         isSyncing = false
