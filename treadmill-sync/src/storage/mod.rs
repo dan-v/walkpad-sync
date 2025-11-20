@@ -129,12 +129,27 @@ impl Storage {
         Ok(samples)
     }
 
-    /// Get samples for a specific date (convenience method)
-    pub async fn get_samples_for_date(&self, date: NaiveDate) -> Result<Vec<TreadmillSample>> {
-        let start = date.and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
-            .and_utc();
-        let end = start + chrono::Duration::days(1);
+    /// Get samples for a specific date in the user's local timezone
+    ///
+    /// # Arguments
+    /// * `date` - The date in the user's local timezone
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
+    pub async fn get_samples_for_date(&self, date: NaiveDate, tz_offset_seconds: i32) -> Result<Vec<TreadmillSample>> {
+        // Convert local date to UTC timestamp range (same logic as get_daily_summary)
+        let start_local = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
+        let end_local = start_local + chrono::Duration::days(1);
+
+        // Apply timezone offset to get UTC timestamps
+        let start_unix = start_local.and_utc().timestamp() - tz_offset_seconds as i64;
+        let end_unix = end_local.and_utc().timestamp() - tz_offset_seconds as i64;
+
+        // Convert back to DateTime<Utc>
+        let start = DateTime::from_timestamp(start_unix, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid start timestamp"))?;
+        let end = DateTime::from_timestamp(end_unix, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid end timestamp"))?;
+
         self.get_samples_by_date_range(start, end).await
     }
 

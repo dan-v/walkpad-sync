@@ -113,12 +113,14 @@ impl From<TreadmillSample> for SampleResponse {
 
 async fn get_date_samples(
     State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
     axum::extract::Path(date_str): axum::extract::Path<String>,
 ) -> Result<Json<SamplesResponse>, ApiError> {
     let date = validate_date(&date_str)?;
-    info!("Getting samples for date: {}", date_str);
+    let tz_offset = query.tz_offset.unwrap_or(0);
+    info!("Getting samples for date: {} with tz_offset: {}", date_str, tz_offset);
 
-    let samples = state.storage.get_samples_for_date(date).await?;
+    let samples = state.storage.get_samples_for_date(date, tz_offset).await?;
 
     if samples.is_empty() {
         return Err(ApiError::NotFound(format!("No samples found for date: {}", date_str)));
