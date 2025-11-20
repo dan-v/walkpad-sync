@@ -6,7 +6,7 @@ struct TodayView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 24) {
+                VStack(spacing: 20) {
                     if viewModel.isLoading {
                         ProgressView("Loading...")
                             .padding()
@@ -29,58 +29,48 @@ struct TodayView: View {
                                 .font(.title3)
                                 .foregroundColor(.secondary)
                         }
-                        .padding(.vertical, 20)
+                        .padding(.vertical, 12)
 
-                        // Secondary stats
-                        HStack(spacing: 4) {
-                            SecondaryStatView(
+                        // Secondary stats - larger and more prominent
+                        HStack(spacing: 20) {
+                            StatBadge(
                                 value: todaySummary.distanceFormatted,
-                                icon: "ruler"
+                                icon: "figure.walk",
+                                color: .green
                             )
-                            Text("•")
-                                .foregroundColor(.secondary)
-                            SecondaryStatView(
+                            StatBadge(
                                 value: todaySummary.caloriesFormatted,
-                                icon: "flame.fill"
-                            )
-                            Text("•")
-                                .foregroundColor(.secondary)
-                            SecondaryStatView(
-                                value: todaySummary.durationFormatted,
-                                icon: "clock"
-                            )
-                        }
-                        .font(.subheadline)
-
-                        Divider()
-                            .padding(.vertical, 8)
-
-                        // Quick stats cards
-                        HStack(spacing: 12) {
-                            QuickStatCard(
-                                value: "\(viewModel.currentStreak)",
-                                label: viewModel.currentStreak == 1 ? "day" : "days",
-                                title: "Streak",
                                 icon: "flame.fill",
                                 color: .orange
                             )
-
-                            QuickStatCard(
-                                value: viewModel.weekStepsFormatted,
-                                label: "steps",
-                                title: "This Week",
-                                icon: "calendar.badge.clock",
-                                color: .blue
+                            StatBadge(
+                                value: todaySummary.durationFormatted,
+                                icon: "clock.fill",
+                                color: .purple
                             )
                         }
                         .padding(.horizontal)
 
                         Divider()
-                            .padding(.vertical, 8)
+                            .padding(.vertical, 4)
 
-                        // Sync section
-                        syncSection
-                            .padding(.horizontal)
+                        // Quick stats - compact horizontal layout
+                        HStack(spacing: 12) {
+                            CompactStatCard(
+                                value: "\(viewModel.currentStreak)",
+                                label: viewModel.currentStreak == 1 ? "day streak" : "day streak",
+                                icon: "flame.fill",
+                                color: .orange
+                            )
+
+                            CompactStatCard(
+                                value: viewModel.weekStepsFormatted,
+                                label: "this week",
+                                icon: "calendar",
+                                color: .blue
+                            )
+                        }
+                        .padding(.horizontal)
 
                     } else {
                         // No activity today
@@ -102,112 +92,53 @@ struct TodayView: View {
             await viewModel.loadData()
         }
     }
-
-    private var syncSection: some View {
-        VStack(spacing: 12) {
-            if viewModel.unsyncedCount > 0 {
-                // Unsynced days exist
-                VStack(spacing: 8) {
-                    HStack {
-                        Image(systemName: "exclamationmark.circle.fill")
-                            .foregroundColor(.orange)
-                        Text("\(viewModel.unsyncedCount) \(viewModel.unsyncedCount == 1 ? "day" : "days") not synced to Health")
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                        Spacer()
-                    }
-
-                    Button {
-                        Task {
-                            await viewModel.syncAll()
-                        }
-                    } label: {
-                        if viewModel.isSyncing {
-                            ProgressView()
-                                .progressViewStyle(.circular)
-                                .frame(maxWidth: .infinity)
-                        } else {
-                            Label("Sync All to Apple Health", systemImage: "heart.fill")
-                                .frame(maxWidth: .infinity)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(viewModel.isSyncing)
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
-                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-
-            } else if !viewModel.isLoading && viewModel.todaySummary != nil {
-                // All caught up
-                HStack {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("All caught up! Everything synced")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding()
-                .background(Color(.systemBackground))
-                .cornerRadius(12)
-                .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-            }
-
-            if let error = viewModel.error {
-                Text(error)
-                    .font(.caption)
-                    .foregroundColor(.red)
-            }
-        }
-    }
 }
 
-struct SecondaryStatView: View {
+// Larger, more prominent stat badges
+struct StatBadge: View {
     let value: String
-    let icon: String
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-            Text(value)
-        }
-        .foregroundColor(.secondary)
-    }
-}
-
-struct QuickStatCard: View {
-    let value: String
-    let label: String
-    let title: String
     let icon: String
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 6) {
             Image(systemName: icon)
+                .font(.title2)
                 .foregroundColor(color)
+            Text(value)
                 .font(.title3)
+                .fontWeight(.semibold)
+        }
+    }
+}
+
+// Compact horizontal stat card
+struct CompactStatCard: View {
+    let value: String
+    let label: String
+    let icon: String
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(value)
                     .font(.title2)
                     .fontWeight(.bold)
                 Text(label)
-                    .font(.caption2)
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
-
-            Text(title)
-                .font(.caption2)
-                .foregroundColor(.secondary)
         }
-        .padding()
+        .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .cornerRadius(10)
+        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
     }
 }
 

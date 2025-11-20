@@ -59,53 +59,53 @@ struct HistoryView: View {
     // MARK: - Monthly Summary
 
     private var monthlySummary: some View {
-        HStack(spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Monthly Total")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(viewModel.monthStepsFormatted)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                Text("steps")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
+        VStack(alignment: .leading, spacing: 12) {
+            Text("This Month")
+                .font(.headline)
+                .padding(.horizontal)
+
+            // Grid of stats
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                MonthStatBox(
+                    icon: "figure.walk",
+                    value: viewModel.monthStepsFormatted,
+                    label: "steps",
+                    color: .blue
+                )
+                MonthStatBox(
+                    icon: "map",
+                    value: viewModel.monthDistanceFormatted,
+                    label: "miles",
+                    color: .green
+                )
+                MonthStatBox(
+                    icon: "flame.fill",
+                    value: viewModel.monthCaloriesFormatted,
+                    label: "calories",
+                    color: .orange
+                )
+                MonthStatBox(
+                    icon: "calendar",
+                    value: "\(viewModel.monthDaysActive)",
+                    label: "active days",
+                    color: .purple
+                )
             }
-
-            Divider()
-                .frame(height: 40)
-
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Distance")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Text(viewModel.monthDistanceFormatted)
-                    .font(.title3)
-                    .fontWeight(.bold)
-                Text("miles")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
+            .padding(.horizontal)
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
-        .padding(.horizontal)
     }
 
     // MARK: - Batch Sync Section
 
     private var batchSyncSection: some View {
-        VStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Image(systemName: "icloud.and.arrow.up")
-                    .foregroundColor(.blue)
-                Text("Sync \(viewModel.unsyncedCount) \(viewModel.unsyncedCount == 1 ? "day" : "days") to Health")
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.title3)
+                Text("\(viewModel.unsyncedCount) \(viewModel.unsyncedCount == 1 ? "day" : "days") not synced")
                     .font(.subheadline)
-                    .foregroundColor(.secondary)
+                    .fontWeight(.medium)
                 Spacer()
             }
 
@@ -114,17 +114,20 @@ struct HistoryView: View {
                     await viewModel.syncAll()
                 }
             } label: {
-                if viewModel.isSyncing {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .frame(maxWidth: .infinity)
-                } else {
-                    Label("Sync All to Apple Health", systemImage: "heart.fill")
-                        .frame(maxWidth: .infinity)
+                HStack {
+                    if viewModel.isSyncing {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                    } else {
+                        Image(systemName: "heart.fill")
+                        Text("Sync All to Apple Health")
+                    }
                 }
+                .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .disabled(viewModel.isSyncing)
+            .controlSize(.regular)
 
             if let error = viewModel.syncError {
                 Text(error)
@@ -132,10 +135,9 @@ struct HistoryView: View {
                     .foregroundColor(.red)
             }
         }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
-        .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+        .padding(14)
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(10)
         .padding(.horizontal)
     }
 
@@ -281,6 +283,37 @@ struct StatSummaryCard: View {
         .background(Color(.systemBackground))
         .cornerRadius(10)
         .shadow(color: .black.opacity(0.05), radius: 5, x: 0, y: 2)
+    }
+}
+
+// MARK: - Month Stat Box
+
+struct MonthStatBox: View {
+    let icon: String
+    let value: String
+    let label: String
+    let color: Color
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Image(systemName: icon)
+                .font(.title2)
+                .foregroundColor(color)
+
+            VStack(spacing: 2) {
+                Text(value)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemBackground))
+        .cornerRadius(10)
+        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
     }
 }
 
@@ -596,6 +629,38 @@ class HistoryViewModel: ObservableObject {
 
         let miles = Double(monthDistance) / 1609.34
         return String(format: "%.1f", miles)
+    }
+
+    var monthCaloriesFormatted: String {
+        let monthCalories = dailySummaries
+            .filter {
+                guard let date = $0.dateDisplay else { return false }
+                var calendar = Calendar.current
+                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let summaryYear = calendar.component(.year, from: date)
+                let summaryMonth = calendar.component(.month, from: date)
+                return summaryYear == selectedYear && summaryMonth == selectedMonth
+            }
+            .reduce(0) { $0 + $1.calories }
+
+        if monthCalories >= 1000 {
+            let k = Double(monthCalories) / 1000.0
+            return String(format: "%.1fk", k)
+        }
+        return "\(monthCalories)"
+    }
+
+    var monthDaysActive: Int {
+        dailySummaries
+            .filter {
+                guard let date = $0.dateDisplay else { return false }
+                var calendar = Calendar.current
+                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let summaryYear = calendar.component(.year, from: date)
+                let summaryMonth = calendar.component(.month, from: date)
+                return summaryYear == selectedYear && summaryMonth == selectedMonth
+            }
+            .count
     }
 
     var unsyncedCount: Int {
