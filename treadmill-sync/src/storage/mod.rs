@@ -140,14 +140,22 @@ impl Storage {
 
     /// Get a daily summary for a specific date
     /// Uses delta columns for accurate summation regardless of resets
-    pub async fn get_daily_summary(&self, date: NaiveDate) -> Result<Option<DailySummary>> {
+    ///
+    /// # Arguments
+    /// * `date` - The date in the user's local timezone
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
+    pub async fn get_daily_summary(&self, date: NaiveDate, tz_offset_seconds: i32) -> Result<Option<DailySummary>> {
         let date_str = date.format("%Y-%m-%d").to_string();
-        let start = date.and_hms_opt(0, 0, 0)
-            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
-            .and_utc();
-        let end = start + chrono::Duration::days(1);
-        let start_unix = start.timestamp();
-        let end_unix = end.timestamp();
+
+        // Convert local date to UTC timestamp range
+        // e.g., 2025-11-19 00:00 PST (-8h) = 2025-11-19 08:00 UTC
+        let start_local = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
+        let end_local = start_local + chrono::Duration::days(1);
+
+        // Apply timezone offset to get UTC timestamps
+        let start_unix = start_local.and_utc().timestamp() - tz_offset_seconds as i64;
+        let end_unix = end_local.and_utc().timestamp() - tz_offset_seconds as i64;
 
         // Get aggregated stats using delta columns
         let summary = sqlx::query(
@@ -209,15 +217,21 @@ impl Storage {
     }
 
     /// Get all dates that have activity (samples with speed > 0)
-    pub async fn get_activity_dates(&self) -> Result<Vec<String>> {
+    ///
+    /// # Arguments
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds (e.g., PST = -28800 for UTC-8)
+    pub async fn get_activity_dates(&self, tz_offset_seconds: i32) -> Result<Vec<String>> {
+        // Apply timezone offset to timestamps before extracting date
+        // e.g., UTC timestamp + (-28800 seconds) = PST time
         let rows = sqlx::query(
             r#"
-            SELECT DISTINCT DATE(timestamp, 'unixepoch') as date
+            SELECT DISTINCT DATE(timestamp + ?, 'unixepoch') as date
             FROM treadmill_samples
             WHERE speed > 0.0
             ORDER BY date DESC
             "#
         )
+        .bind(tz_offset_seconds)
         .fetch_all(&self.pool)
         .await?;
 

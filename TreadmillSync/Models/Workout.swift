@@ -75,9 +75,8 @@ struct DailySummary: Codable, Identifiable {
 
     // Computed properties for display
     var dateDisplay: Date? {
-        // Server sends date strings like "2025-11-20"
-        // Parse as local midnight to avoid timezone conversion issues
-        // This ensures "2025-11-20" displays as Nov 20 in all timezones
+        // Server now returns dates in user's local timezone
+        // Parse as local date for display
         DateFormatters.yearMonthDay.date(from: date)
     }
 
@@ -141,14 +140,9 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var isToday: Bool {
-        // Compare using local date for display consistency
+        // Server returns dates in user's local timezone
         let todayStr = DateFormatters.yearMonthDay.string(from: Date())
-
-        // Also check UTC date since server groups by UTC
-        let todayStrUTC = DateFormatters.yearMonthDayUTC.string(from: Date())
-
-        // Return true if matches either (handles timezone edge cases)
-        return date == todayStr || date == todayStrUTC
+        return date == todayStr
     }
 }
 

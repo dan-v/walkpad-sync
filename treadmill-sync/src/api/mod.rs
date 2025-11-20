@@ -47,12 +47,20 @@ struct ActivityDatesResponse {
     dates: Vec<String>,  // YYYY-MM-DD format
 }
 
+#[derive(Debug, Deserialize)]
+struct TimezoneQuery {
+    #[serde(default)]
+    tz_offset: Option<i32>,  // Timezone offset in seconds (e.g., -28800 for PST/UTC-8)
+}
+
 async fn get_activity_dates(
     State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<ActivityDatesResponse>, ApiError> {
-    info!("Getting all activity dates");
+    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    info!("Getting all activity dates (tz_offset={})", tz_offset);
 
-    let dates = state.storage.get_activity_dates().await?;
+    let dates = state.storage.get_activity_dates(tz_offset).await?;
 
     Ok(Json(ActivityDatesResponse { dates }))
 }
@@ -61,11 +69,13 @@ async fn get_activity_dates(
 async fn get_date_summary(
     State(state): State<AppState>,
     axum::extract::Path(date_str): axum::extract::Path<String>,
+    Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<DailySummary>, ApiError> {
     let date = validate_date(&date_str)?;
-    info!("Getting summary for date: {}", date_str);
+    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    info!("Getting summary for date: {} (tz_offset={})", date_str, tz_offset);
 
-    let summary = state.storage.get_daily_summary(date).await?;
+    let summary = state.storage.get_daily_summary(date, tz_offset).await?;
 
     match summary {
         Some(s) => Ok(Json(s)),
@@ -175,12 +185,14 @@ struct SyncResponse {
 async fn mark_date_synced(
     State(state): State<AppState>,
     axum::extract::Path(date_str): axum::extract::Path<String>,
+    Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<SyncResponse>, ApiError> {
     let date = validate_date(&date_str)?;
-    info!("Marking date as synced: {}", date_str);
+    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    info!("Marking date as synced: {} (tz_offset={})", date_str, tz_offset);
 
     // Verify the date has data before marking as synced
-    let summary = state.storage.get_daily_summary(date).await?;
+    let summary = state.storage.get_daily_summary(date, tz_offset).await?;
     if summary.is_none() {
         return Err(ApiError::NotFound(format!("No activity found for date: {}", date_str)));
     }

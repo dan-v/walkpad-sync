@@ -270,8 +270,7 @@ class TodayViewModel: ObservableObject {
         guard !allSummaries.isEmpty else { return 0 }
 
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -292,8 +291,7 @@ class TodayViewModel: ObservableObject {
     }
 
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -301,7 +299,6 @@ class TodayViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = allSummaries
@@ -346,10 +343,9 @@ class TodayViewModel: ObservableObject {
         error = nil
 
         do {
-            // Get today's date in UTC (server uses UTC for date grouping)
+            // Get today's date in local timezone
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(identifier: "UTC")
             let todayStr = formatter.string(from: Date())
 
             // Fetch all dates to get full summaries for streak/week calculation
