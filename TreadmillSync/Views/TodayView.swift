@@ -200,7 +200,6 @@ class TodayViewModel: ObservableObject {
     @Published var lastFetchTime: Date?
     @Published var previousSteps: Int64 = 0
     @Published var lastStepsChangeTime: Date?
-    @Published var lastSyncedSteps: Int64 = 0  // Track what we last synced to Apple Health
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -218,23 +217,6 @@ class TodayViewModel: ObservableObject {
         // If steps increased within the last 60 seconds, workout is ongoing
         let timeSinceLastChange = Date().timeIntervalSince(lastChange)
         return timeSinceLastChange < 60
-    }
-
-    // Simple check: should we sync today?
-    private func shouldSyncToday(_ summary: DailySummary) -> Bool {
-        // Don't sync if no activity yet
-        guard summary.steps > 0 else { return false }
-
-        // Don't sync if been idle for > 2 hours (workout is done)
-        if let lastChange = lastStepsChangeTime {
-            let hoursSinceLastActivity = Date().timeIntervalSince(lastChange) / 3600
-            if hoursSinceLastActivity > 2 {
-                return false
-            }
-        }
-
-        // Only sync if steps actually increased since last sync
-        return summary.steps > lastSyncedSteps
     }
 
     var currentStreak: Int {
@@ -291,50 +273,6 @@ class TodayViewModel: ObservableObject {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
     }
 
-    // Automatically sync workouts
-    func autoSyncCompletedWorkouts() async {
-        // Find workouts that need syncing
-        let workoutsToSync = allSummaries.filter { summary in
-            // Previous days: only sync if not synced yet (sync once and done)
-            if !summary.isToday {
-                return !summary.isSynced
-            }
-
-            // Today: only sync if steps increased since last sync
-            return shouldSyncToday(summary)
-        }
-
-        // Silently sync each one
-        for summary in workoutsToSync {
-            do {
-                let samples = try await apiClient.fetchSamples(date: summary.date)
-
-                try await healthKitManager.saveWorkout(
-                    date: summary.date,
-                    samples: samples,
-                    distanceMeters: summary.distanceMeters,
-                    calories: summary.calories,
-                    steps: summary.steps
-                )
-
-                try await apiClient.markDateSynced(date: summary.date)
-
-                // Update last synced steps to avoid re-syncing same data
-                if summary.isToday {
-                    lastSyncedSteps = summary.steps
-                }
-            } catch {
-                // Silently fail - will retry next time
-                continue
-            }
-        }
-
-        // Reload data if we synced anything
-        if !workoutsToSync.isEmpty {
-            await loadData(showLoading: false)
-        }
-    }
-
     func loadData(showLoading: Bool = true) async {
         if showLoading {
             isLoading = true
@@ -381,9 +319,6 @@ class TodayViewModel: ObservableObject {
         if showLoading {
             isLoading = false
         }
-
-        // Auto-sync completed workouts after loading data
-        await autoSyncCompletedWorkouts()
     }
 
     func syncAll() async {

@@ -24,6 +24,11 @@ struct HistoryView: View {
                         if viewModel.dailySummaries.count > 1 {
                             trendChart
                         }
+
+                        // Batch Sync Section
+                        if viewModel.unsyncedCount > 0 {
+                            batchSyncSection
+                        }
                     }
                 }
                 .padding(.vertical)
@@ -88,6 +93,52 @@ struct HistoryView: View {
             }
             .padding(.horizontal)
         }
+    }
+
+    // MARK: - Batch Sync Section
+
+    private var batchSyncSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.title3)
+                Text("\(viewModel.unsyncedCount) \(viewModel.unsyncedCount == 1 ? "day" : "days") not synced")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                Spacer()
+            }
+
+            Button {
+                Task {
+                    await viewModel.syncAll()
+                }
+            } label: {
+                HStack {
+                    if viewModel.isSyncing {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                    } else {
+                        Image(systemName: "heart.fill")
+                        Text("Sync All to Apple Health")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(viewModel.isSyncing)
+            .controlSize(.regular)
+
+            if let error = viewModel.syncError {
+                Text(error)
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+        }
+        .padding(14)
+        .background(Color.orange.opacity(0.1))
+        .cornerRadius(10)
+        .padding(.horizontal)
     }
 
     // MARK: - Month Calendar
@@ -411,6 +462,20 @@ struct MonthCalendarView: View {
                                             Text("\(steps / 1000)k")
                                                 .font(.system(size: 8))
                                                 .foregroundColor(.white.opacity(0.9))
+                                        }
+                                    }
+
+                                    // Unsynced indicator
+                                    if let summary = daySummary, !summary.isSynced {
+                                        VStack {
+                                            HStack {
+                                                Spacer()
+                                                Circle()
+                                                    .fill(Color.blue)
+                                                    .frame(width: 6, height: 6)
+                                                    .padding(4)
+                                            }
+                                            Spacer()
                                         }
                                     }
 
