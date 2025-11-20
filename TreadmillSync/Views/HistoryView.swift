@@ -378,21 +378,37 @@ struct MonthCalendarView: View {
     private func stepsForDate(_ date: Date) -> Int64? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        // Server uses UTC for date grouping
+        // Calendar dates are in UTC, format as UTC to match server date strings
         formatter.timeZone = TimeZone(identifier: "UTC")
         let dateString = formatter.string(from: date)
 
-        return summaries.first(where: { $0.date == dateString })?.steps
+        // Try exact match first
+        if let steps = summaries.first(where: { $0.date == dateString })?.steps {
+            return steps
+        }
+
+        // Also try local date string for edge cases around midnight
+        formatter.timeZone = TimeZone.current
+        let localDateString = formatter.string(from: date)
+        return summaries.first(where: { $0.date == localDateString })?.steps
     }
 
     private func summaryForDate(_ date: Date) -> DailySummary? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        // Server uses UTC for date grouping
+        // Calendar dates are in UTC, format as UTC to match server date strings
         formatter.timeZone = TimeZone(identifier: "UTC")
         let dateString = formatter.string(from: date)
 
-        return summaries.first(where: { $0.date == dateString })
+        // Try exact match first
+        if let summary = summaries.first(where: { $0.date == dateString }) {
+            return summary
+        }
+
+        // Also try local date string for edge cases around midnight
+        formatter.timeZone = TimeZone.current
+        let localDateString = formatter.string(from: date)
+        return summaries.first(where: { $0.date == localDateString })
     }
 
     private func colorForSteps(_ steps: Int64?) -> Color {
