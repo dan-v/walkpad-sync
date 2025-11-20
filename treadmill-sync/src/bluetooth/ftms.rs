@@ -359,43 +359,20 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
         }
 
         LifeSpanQuery::Steps => {
-            // Steps format: 16-bit little-endian in bytes[3] and bytes[4]
-            // Note: Steps appears to actually use 16 bits (unlike distance/calories)
-            if data.len() < 5 {
+            // Steps format: 16-bit big-endian in bytes[2] and bytes[3]
+            // Response format: [A1, AA, HIGH_BYTE, LOW_BYTE, 00, 00]
+            // Example: [A1, AA, 0x61, 0x88] = 0x6188 = 24968 steps
+            if data.len() < 4 {
                 return Err(anyhow!("LifeSpan steps data too short: {} bytes", data.len()));
             }
 
-            // VERBOSE DEBUG: Log entire response for steps
-            warn!("🚶 STEPS RAW RESPONSE: full_buffer={:02X?} (length={})", data, data.len());
-            warn!("🚶 STEPS BYTE ANALYSIS:");
-            for (i, byte) in data.iter().enumerate() {
-                warn!("    byte[{}] = 0x{:02X} (decimal: {})", i, byte, byte);
-            }
+            // Parse as 16-bit big-endian from bytes[2] and bytes[3]
+            let steps = u16::from_be_bytes([data[2], data[3]]);
 
-            // Try parsing as 16-bit little-endian
-            let steps_u16 = u16::from_le_bytes([data[3], data[4]]);
-            warn!("🚶 STEPS PARSED (u16 LE): {} from bytes [0x{:02X}, 0x{:02X}]",
-                   steps_u16, data[3], data[4]);
+            debug!("LifeSpan steps: {} (raw bytes: [0x{:02X}, 0x{:02X}])",
+                   steps, data[2], data[3]);
 
-            // Also try other interpretations
-            if data.len() >= 5 {
-                let alt_u16_be = u16::from_be_bytes([data[3], data[4]]);
-                let alt_u8 = data[3] as u16;
-                let alt_3bytes = if data.len() >= 6 {
-                    Some((data[3] as u32) | ((data[4] as u32) << 8) | ((data[5] as u32) << 16))
-                } else {
-                    None
-                };
-
-                warn!("🚶 STEPS ALTERNATIVE INTERPRETATIONS:");
-                warn!("    As u16 big-endian [3,4]: {}", alt_u16_be);
-                warn!("    As u8 byte[3] only: {}", alt_u8);
-                if let Some(val) = alt_3bytes {
-                    warn!("    As u24 [3,4,5]: {}", val);
-                }
-            }
-
-            result.steps = Some(steps_u16);
+            result.steps = Some(steps);
         }
 
         LifeSpanQuery::Time => {
