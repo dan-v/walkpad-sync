@@ -53,11 +53,19 @@ class HealthKitManager: ObservableObject {
             return
         }
 
-        print("🔍 Querying workouts from \(dayStart) to \(dayEnd)")
+        // Expand query window by 12 hours on each side to catch workouts that might
+        // start/end slightly outside the exact day boundaries due to timezone issues
+        guard let queryStart = calendar.date(byAdding: .hour, value: -12, to: dayStart),
+              let queryEnd = calendar.date(byAdding: .hour, value: 12, to: dayEnd) else {
+            print("❌ Failed to calculate query window")
+            return
+        }
 
-        // Query for workouts in this date range
+        print("🔍 Querying workouts from \(queryStart) to \(queryEnd)")
+
+        // Query for workouts in this date range (not using strictStartDate to catch overlapping workouts)
         let workoutType = HKObjectType.workoutType()
-        let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: .strictStartDate)
+        let predicate = HKQuery.predicateForSamples(withStart: queryStart, end: queryEnd, options: [])
 
         // Create a query to find existing workouts
         let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
@@ -100,11 +108,13 @@ class HealthKitManager: ObservableObject {
             throw HealthKitError.invalidData
         }
 
-        // Delete any existing workouts for this date first (prevents duplicates)
-        try await deleteExistingWorkouts(for: date)
-
         let startDate = firstSample.date
         let endDate = lastSample.date
+
+        print("📅 Workout times: \(startDate) to \(endDate)")
+
+        // Delete any existing workouts for this date first (prevents duplicates)
+        try await deleteExistingWorkouts(for: date)
 
         // Create workout configuration
         let configuration = HKWorkoutConfiguration()
