@@ -30,6 +30,14 @@ private enum DateFormatters {
         formatter.timeZone = TimeZone.current
         return formatter
     }()
+
+    // For server communication - server uses UTC for date grouping
+    static let yearMonthDayUTC: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter
+    }()
 }
 
 // MARK: - Date-Based API Models (v2)
@@ -67,7 +75,8 @@ struct DailySummary: Codable, Identifiable {
 
     // Computed properties for display
     var dateDisplay: Date? {
-        DateFormatters.yearMonthDay.date(from: date)
+        // Server sends UTC dates, parse them as UTC
+        DateFormatters.yearMonthDayUTC.date(from: date)
     }
 
     var dateFormatted: String {
@@ -130,8 +139,8 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var isToday: Bool {
-        let calendar = Calendar.current
-        let todayStr = DateFormatters.yearMonthDay.string(from: Date())
+        // Server uses UTC dates, so compare using UTC
+        let todayStr = DateFormatters.yearMonthDayUTC.string(from: Date())
         return date == todayStr
     }
 }

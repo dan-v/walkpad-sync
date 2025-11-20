@@ -104,12 +104,13 @@ struct TodayView: View {
         .task {
             await viewModel.loadData()
 
-            // Start auto-refresh every 30 seconds for real-time updates
+            // Start auto-refresh every 3 seconds for real-time updates
             autoRefreshTask = Task {
                 while !Task.isCancelled {
-                    try? await Task.sleep(for: .seconds(30))
+                    try? await Task.sleep(for: .seconds(3))
                     if !Task.isCancelled {
-                        await viewModel.loadData()
+                        // Don't show loading indicator during background refresh
+                        await viewModel.loadData(showLoading: false)
                     }
                 }
             }
@@ -224,7 +225,8 @@ class TodayViewModel: ObservableObject {
         guard !allSummaries.isEmpty else { return 0 }
 
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        let calendar = Calendar.current
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -245,7 +247,8 @@ class TodayViewModel: ObservableObject {
     }
 
     var weekStepsFormatted: String {
-        let calendar = Calendar.current
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -253,7 +256,7 @@ class TodayViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone.current
+        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = allSummaries
@@ -291,15 +294,17 @@ class TodayViewModel: ObservableObject {
         return "\(average)"
     }
 
-    func loadData() async {
-        isLoading = true
+    func loadData(showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
+        }
         error = nil
 
         do {
-            // Get today's date in local timezone
+            // Get today's date in UTC (server uses UTC for date grouping)
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone.current
+            formatter.timeZone = TimeZone(identifier: "UTC")
             let todayStr = formatter.string(from: Date())
 
             // Fetch all dates to get full summaries for streak/week calculation
@@ -321,7 +326,9 @@ class TodayViewModel: ObservableObject {
             self.error = error.localizedDescription
         }
 
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     func syncAll() async {
