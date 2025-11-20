@@ -22,62 +22,62 @@ private enum DateFormatters {
         formatter.timeStyle = .none
         return formatter
     }()
+
+    static let yearMonthDay: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC") // Server uses UTC dates
+        return formatter
+    }()
 }
 
-// MARK: - API Response Models
+// MARK: - Date-Based API Models (v2)
 
-struct PendingWorkoutsResponse: Codable {
-    let workouts: [Workout]
-    let hasMore: Bool
-
-    enum CodingKeys: String, CodingKey {
-        case workouts
-        case hasMore = "has_more"
-    }
+struct ActivityDatesResponse: Codable {
+    let dates: [String] // YYYY-MM-DD format
 }
 
-struct Workout: Codable, Identifiable {
-    let id: Int64
-    let workoutUuid: String
-    let startTime: String
-    let endTime: String?
-    let totalDuration: Int64?
-    let totalDistance: Int64?
-    let totalSteps: Int64?
-    let avgSpeed: Double?
-    let maxSpeed: Double?
-    let totalCalories: Int64?
-    let samplesUrl: String
+struct DailySummary: Codable, Identifiable {
+    let date: String // YYYY-MM-DD
+    let totalSamples: Int64
+    let durationSeconds: Int64
+    let distanceMeters: Int64
+    let calories: Int64
+    let steps: Int64
+    let avgSpeed: Double // m/s
+    let maxSpeed: Double
+    let isSynced: Bool
+    let syncedAt: Int64? // Unix timestamp when synced (nil if not synced)
+
+    var id: String { date }
 
     enum CodingKeys: String, CodingKey {
-        case id
-        case workoutUuid = "workout_uuid"
-        case startTime = "start_time"
-        case endTime = "end_time"
-        case totalDuration = "total_duration"
-        case totalDistance = "total_distance"
-        case totalSteps = "total_steps"
+        case date
+        case totalSamples = "total_samples"
+        case durationSeconds = "duration_seconds"
+        case distanceMeters = "distance_meters"
+        case calories
+        case steps
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
-        case totalCalories = "total_calories"
-        case samplesUrl = "samples_url"
+        case isSynced = "is_synced"
+        case syncedAt = "synced_at"
     }
 
     // Computed properties for display
-    var start: Date? {
-        DateFormatters.iso8601.date(from: startTime)
+    var dateDisplay: Date? {
+        DateFormatters.yearMonthDay.date(from: date)
     }
 
-    var end: Date? {
-        guard let endTime = endTime else { return nil }
-        return DateFormatters.iso8601.date(from: endTime)
+    var dateFormatted: String {
+        guard let dateObj = dateDisplay else { return date }
+        return DateFormatters.dateOnly.string(from: dateObj)
     }
 
     var durationFormatted: String {
-        guard let duration = totalDuration else { return "N/A" }
-        let hours = duration / 3600
-        let minutes = (duration % 3600) / 60
-        let seconds = duration % 60
+        let hours = durationSeconds / 3600
+        let minutes = (durationSeconds % 3600) / 60
+        let seconds = durationSeconds % 60
 
         if hours > 0 {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
@@ -87,114 +87,96 @@ struct Workout: Codable, Identifiable {
     }
 
     var distanceFormatted: String {
-        guard let meters = totalDistance else { return "N/A" }
-        let miles = Double(meters) / 1609.34
+        let miles = Double(distanceMeters) / 1609.34
         return String(format: "%.2f mi", miles)
     }
 
     var caloriesFormatted: String {
-        guard let calories = totalCalories else { return "N/A" }
         return "\(calories) kcal"
     }
 
-    var dateFormatted: String {
-        guard let start = start else { return "Unknown" }
-        return DateFormatters.display.string(from: start)
+    var stepsFormatted: String {
+        return "\(steps)"
+    }
+
+    var avgSpeedFormatted: String {
+        let mph = avgSpeed * 2.23694 // m/s to mph
+        return String(format: "%.1f mph", mph)
+    }
+
+    var syncedAtFormatted: String? {
+        guard let syncedAt = syncedAt else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .full
+        return "Synced " + formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    var syncedAtShort: String? {
+        guard let syncedAt = syncedAt else { return nil }
+        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .abbreviated
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
+
+    var dayOfWeek: String {
+        guard let dateObj = dateDisplay else { return "" }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "EEE"
+        formatter.timeZone = TimeZone(identifier: "UTC")
+        return formatter.string(from: dateObj)
+    }
+
+    var isToday: Bool {
+        var calendar = Calendar.current
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let todayStr = DateFormatters.yearMonthDay.string(from: Date())
+        return date == todayStr
     }
 }
 
 struct SamplesResponse: Codable {
-    let samples: [WorkoutSample]
+    let date: String
+    let samples: [TreadmillSample]
 }
 
-struct WorkoutSample: Codable, Identifiable {
-    var id: String { timestamp }
-
-    let timestamp: String
+struct TreadmillSample: Codable, Identifiable {
+    let timestamp: Int64 // Unix epoch
     let speed: Double?
-    let distance: Int64?
-    let calories: Int64?
-    let steps: Int64? // cumulative step count
+    let distanceTotal: Int64?
+    let caloriesTotal: Int64?
+    let stepsTotal: Int64?
+
+    var id: Int64 { timestamp }
 
     enum CodingKeys: String, CodingKey {
         case timestamp
         case speed
-        case distance
-        case calories
-        case steps = "cadence" // Backend uses 'cadence' column for steps
+        case distanceTotal = "distance_total"
+        case caloriesTotal = "calories_total"
+        case stepsTotal = "steps_total"
     }
 
-    var date: Date? {
-        DateFormatters.iso8601.date(from: timestamp)
-    }
-}
-
-struct ConfirmSyncRequest: Codable {
-    let deviceId: String
-    let healthkitUuid: String?
-
-    enum CodingKeys: String, CodingKey {
-        case deviceId = "device_id"
-        case healthkitUuid = "healthkit_uuid"
+    var date: Date {
+        Date(timeIntervalSince1970: TimeInterval(timestamp))
     }
 }
 
-struct RegisterRequest: Codable {
-    let deviceId: String
-    let deviceName: String?
+struct SyncedDatesResponse: Codable {
+    let syncedDates: [HealthSync]
 
     enum CodingKeys: String, CodingKey {
-        case deviceId = "device_id"
-        case deviceName = "device_name"
+        case syncedDates = "synced_dates"
     }
 }
 
-// MARK: - Live Workout Data
-
-struct LiveWorkoutResponse: Codable {
-    let workout: Workout?
-    let currentMetrics: LiveWorkoutMetrics?
-    let recentSamples: [WorkoutSample]
+struct HealthSync: Codable {
+    let syncDate: String // YYYY-MM-DD
+    let syncedAt: Int64 // Unix timestamp
 
     enum CodingKeys: String, CodingKey {
-        case workout
-        case currentMetrics = "current_metrics"
-        case recentSamples = "recent_samples"
-    }
-}
-
-struct LiveWorkoutMetrics: Codable {
-    let currentSpeed: Double?
-    let distanceSoFar: Int64?
-    let stepsSoFar: Int64?
-    let caloriesSoFar: Int64?
-
-    enum CodingKeys: String, CodingKey {
-        case currentSpeed = "current_speed"
-        case distanceSoFar = "distance_so_far"
-        case stepsSoFar = "steps_so_far"
-        case caloriesSoFar = "calories_so_far"
-    }
-
-    var speedFormatted: String {
-        guard let speed = currentSpeed else { return "0.0" }
-        let mph = speed * 2.23694 // m/s to mph
-        return String(format: "%.1f", mph)
-    }
-
-    var distanceFormatted: String {
-        guard let meters = distanceSoFar else { return "0.00" }
-        let miles = Double(meters) / 1609.34
-        return String(format: "%.2f", miles)
-    }
-
-    var stepsFormatted: String {
-        guard let steps = stepsSoFar else { return "0" }
-        return "\(steps)"
-    }
-
-    var caloriesFormatted: String {
-        guard let cal = caloriesSoFar else { return "0" }
-        return "\(cal)"
+        case syncDate = "sync_date"
+        case syncedAt = "synced_at"
     }
 }

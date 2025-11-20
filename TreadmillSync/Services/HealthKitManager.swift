@@ -31,20 +31,22 @@ class HealthKitManager: ObservableObject {
         try await healthStore.requestAuthorization(toShare: typesToWrite, read: [])
     }
 
-    // MARK: - Save Workout
+    // MARK: - Save Workout from Date
 
     func saveWorkout(
-        _ workout: Workout,
-        samples: [WorkoutSample]
-    ) async throws -> UUID {
-        guard let startDate = workout.start,
-              let endDate = workout.end else {
-            print("❌ Workout \(workout.id): Missing start or end date")
+        date: String,
+        samples: [TreadmillSample],
+        distanceMeters: Int64,
+        calories: Int64,
+        steps: Int64
+    ) async throws {
+        guard let firstSample = samples.first,
+              let lastSample = samples.last else {
             throw HealthKitError.invalidData
         }
 
-        print("📝 Syncing workout \(workout.id): \(startDate) to \(endDate)")
-        print("   Duration: \(workout.totalDuration ?? 0)s, Distance: \(workout.totalDistance ?? 0)m, Samples: \(samples.count)")
+        let startDate = firstSample.date
+        let endDate = lastSample.date
 
         // Create workout configuration
         let configuration = HKWorkoutConfiguration()
@@ -59,126 +61,94 @@ class HealthKitManager: ObservableObject {
         )
 
         // Begin workout collection
-        do {
-            try await builder.beginCollection(at: startDate)
-            print("✅ Collection started")
-        } catch {
-            print("❌ Failed to begin collection: \(error)")
-            throw error
-        }
-
-        // Create workout samples (distance points, energy, etc.)
-        var workoutSamples: [HKSample] = []
-
-        for sample in samples {
-            guard let sampleDate = sample.date else { continue }
-
-            // Distance samples (cumulative)
-            if let distance = sample.distance, distance > 0,
-               let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
-                let distanceQuantity = HKQuantity(unit: .meter(), doubleValue: Double(distance))
-                let distanceSample = HKQuantitySample(
-                    type: distanceType,
-                    quantity: distanceQuantity,
-                    start: sampleDate,
-                    end: sampleDate
-                )
-                workoutSamples.append(distanceSample)
-            }
-
-            // Energy samples (cumulative)
-            if let calories = sample.calories, calories > 0,
-               let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-                let energyQuantity = HKQuantity(unit: .kilocalorie(), doubleValue: Double(calories))
-                let energySample = HKQuantitySample(
-                    type: energyType,
-                    quantity: energyQuantity,
-                    start: sampleDate,
-                    end: sampleDate
-                )
-                workoutSamples.append(energySample)
-            }
-
-            // Step count samples (cumulative)
-            if let steps = sample.steps, steps > 0,
-               let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
-                let stepQuantity = HKQuantity(unit: .count(), doubleValue: Double(steps))
-                let stepSample = HKQuantitySample(
-                    type: stepType,
-                    quantity: stepQuantity,
-                    start: sampleDate,
-                    end: sampleDate
-                )
-                workoutSamples.append(stepSample)
-            }
-        }
+        try await builder.beginCollection(at: startDate)
 
         // Add samples to builder
-        if !workoutSamples.isEmpty {
-            do {
-                try await builder.addSamples(workoutSamples)
-                print("✅ Added \(workoutSamples.count) samples to builder")
-            } catch {
-                print("❌ Failed to add samples: \(error)")
-                throw error
+        var workoutSamples: [HKSample] = []
+
+        // Process samples to create deltas (HealthKit wants changes, not cumulative values)
+        var lastDistance: Int64 = 0
+        var lastCalories: Int64 = 0
+        var lastSteps: Int64 = 0
+
+        for sample in samples {
+            let sampleDate = sample.date
+
+            // Distance delta
+            if let distanceTotal = sample.distanceTotal, distanceTotal > lastDistance {
+                let delta = distanceTotal - lastDistance
+                if let distanceType = HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning) {
+                    let quantity = HKQuantity(unit: .meter(), doubleValue: Double(delta))
+                    let distanceSample = HKQuantitySample(
+                        type: distanceType,
+                        quantity: quantity,
+                        start: sampleDate,
+                        end: sampleDate
+                    )
+                    workoutSamples.append(distanceSample)
+                }
+                lastDistance = distanceTotal
             }
-        } else {
-            print("⚠️ No samples to add")
+
+            // Energy delta
+            if let caloriesTotal = sample.caloriesTotal, caloriesTotal > lastCalories {
+                let delta = caloriesTotal - lastCalories
+                if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
+                    let quantity = HKQuantity(unit: .kilocalorie(), doubleValue: Double(delta))
+                    let energySample = HKQuantitySample(
+                        type: energyType,
+                        quantity: quantity,
+                        start: sampleDate,
+                        end: sampleDate
+                    )
+                    workoutSamples.append(energySample)
+                }
+                lastCalories = caloriesTotal
+            }
+
+            // Steps delta
+            if let stepsTotal = sample.stepsTotal, stepsTotal > lastSteps {
+                let delta = stepsTotal - lastSteps
+                if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
+                    let quantity = HKQuantity(unit: .count(), doubleValue: Double(delta))
+                    let stepSample = HKQuantitySample(
+                        type: stepType,
+                        quantity: quantity,
+                        start: sampleDate,
+                        end: sampleDate
+                    )
+                    workoutSamples.append(stepSample)
+                }
+                lastSteps = stepsTotal
+            }
         }
 
-        // Add metadata
-        do {
-            try await builder.addMetadata([HKMetadataKeyIndoorWorkout: true])
-            print("✅ Metadata added")
-        } catch {
-            print("❌ Failed to add metadata: \(error)")
-            throw error
+        // Add samples to workout
+        if !workoutSamples.isEmpty {
+            try await builder.addSamples(workoutSamples)
         }
 
-        // End workout collection
-        do {
-            try await builder.endCollection(at: endDate)
-            print("✅ Collection ended")
-        } catch {
-            print("❌ Failed to end collection: \(error)")
-            throw error
-        }
-
-        // Finish the workout and get the result
-        print("🏁 Finishing workout...")
-        let finishedWorkout: HKWorkout?
-        do {
-            finishedWorkout = try await builder.finishWorkout()
-        } catch {
-            print("❌ Failed to finish workout: \(error)")
-            throw error
-        }
-
-        guard let finishedWorkout = finishedWorkout else {
-            print("❌ finishWorkout() returned nil (workout rejected by HealthKit)")
-            throw HealthKitError.invalidData
-        }
-
-        print("✅ Workout saved successfully! UUID: \(finishedWorkout.uuid)")
-        return finishedWorkout.uuid
+        // End collection and finish workout
+        try await builder.endCollection(at: endDate)
+        _ = try await builder.finishWorkout()
     }
 }
 
 // MARK: - Errors
 
-enum HealthKitError: LocalizedError {
+enum HealthKitError: Error, LocalizedError {
     case notAvailable
-    case notAuthorized
     case invalidData
+    case authorizationDenied
 
     var errorDescription: String? {
         switch self {
         case .notAvailable:
             return "HealthKit is not available on this device"
-        case .notAuthorized:
-            return "HealthKit access not authorized"
         case .invalidData:
             return "Invalid workout data"
+        case .authorizationDenied:
+            return "HealthKit authorization was denied"
         }
     }
 }

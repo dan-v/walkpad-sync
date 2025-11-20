@@ -1,8 +1,6 @@
 import SwiftUI
 
 struct SettingsView: View {
-    @EnvironmentObject var syncManager: SyncManager
-
     @State private var host: String
     @State private var port: String
     @State private var useHTTPS: Bool
@@ -19,35 +17,6 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             Form {
-                // Connection Status
-                Section {
-                    HStack {
-                        Circle()
-                            .fill(syncManager.isConnected ? Color.green : Color.red)
-                            .frame(width: 12, height: 12)
-                        Text(syncManager.isConnected ? "Connected" : "Disconnected")
-                            .foregroundColor(syncManager.isConnected ? .green : .red)
-                            .fontWeight(.medium)
-                        Spacer()
-                        if syncManager.isConnected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundColor(.green)
-                        }
-                    }
-
-                    if syncManager.isConnected {
-                        LabeledContent("Server", value: "\(syncManager.serverConfig.host):\(syncManager.serverConfig.port)")
-                            .font(.caption)
-                    }
-
-                    if syncManager.pendingCount > 0 {
-                        LabeledContent("Pending Workouts", value: "\(syncManager.pendingCount)")
-                            .foregroundColor(.orange)
-                    }
-                } header: {
-                    Text("Status")
-                }
-
                 // Server Configuration
                 Section {
                     TextField("Host", text: $host)
@@ -155,10 +124,7 @@ struct SettingsView: View {
         guard let portNum = Int(port), portNum > 0, portNum <= 65535 else { return }
 
         let config = ServerConfig(host: trimmedHost, port: portNum, useHTTPS: useHTTPS)
-
-        Task {
-            await syncManager.updateServerConfig(config)
-        }
+        config.save()
     }
 }
 
@@ -169,5 +135,4 @@ struct ConnectionTestResult {
 
 #Preview {
     SettingsView()
-        .environmentObject(SyncManager())
 }

@@ -1,5 +1,5 @@
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sqlx::{
     sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
@@ -8,42 +8,39 @@ use sqlx::{
 use std::str::FromStr;
 use std::time::Duration;
 
+/// A single raw sample from the treadmill
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct Workout {
-    pub id: i64,
-    pub workout_uuid: String,
-    pub start_time: String,
-    pub end_time: Option<String>,
-    pub status: String,
-    pub total_duration: Option<i64>,
-    pub total_distance: Option<i64>,
-    pub total_steps: Option<i64>,
-    pub avg_speed: Option<f64>,
-    pub max_speed: Option<f64>,
-    pub total_calories: Option<i64>,
-    pub created_at: String,
-    pub updated_at: String,
+pub struct TreadmillSample {
+    pub timestamp: i64,           // Unix epoch seconds
+    pub speed: Option<f64>,       // m/s
+    pub distance_total: Option<i64>, // cumulative meters (raw, for debugging)
+    pub calories_total: Option<i64>, // cumulative kcal (raw, for debugging)
+    pub steps_total: Option<i64>,    // cumulative steps (raw, for debugging)
+    pub distance_delta: Option<i64>, // meters since last sample
+    pub calories_delta: Option<i64>, // kcal since last sample
+    pub steps_delta: Option<i64>,    // steps since last sample
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct WorkoutSample {
-    pub id: i64,
-    pub workout_id: i64,
-    pub timestamp: String,
-    pub speed: Option<f64>,
-    pub distance: Option<i64>,
-    pub calories: Option<i64>,
-    pub cadence: Option<i64>,
+/// Summary of activity for a specific date
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailySummary {
+    pub date: String,            // YYYY-MM-DD
+    pub total_samples: i64,
+    pub duration_seconds: i64,
+    pub distance_meters: i64,
+    pub calories: i64,
+    pub steps: i64,
+    pub avg_speed: f64,          // m/s
+    pub max_speed: f64,
+    pub is_synced: bool,
+    pub synced_at: Option<i64>,  // Unix timestamp when synced (None if not synced)
 }
 
+/// Health sync record
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct SyncClient {
-    pub id: i64,
-    pub device_id: String,
-    pub device_name: Option<String>,
-    pub last_synced_workout_id: Option<i64>,
-    pub last_seen: String,
-    pub created_at: String,
+pub struct HealthSync {
+    pub sync_date: String,       // YYYY-MM-DD
+    pub synced_at: i64,          // Unix timestamp
 }
 
 pub struct Storage {
@@ -65,8 +62,8 @@ impl Storage {
             .connect_with(options)
             .await?;
 
-        // Run migrations (execute each statement separately for safety)
-        let schema = include_str!("../../schema.sql");
+        // Run migrations using the new v2 schema
+        let schema = include_str!("../../schema_v2.sql");
         for statement in schema.split(';').filter(|s| !s.trim().is_empty()) {
             sqlx::query(statement).execute(&pool).await?;
         }
@@ -74,294 +71,223 @@ impl Storage {
         Ok(Self { pool })
     }
 
-    // Workout operations
-    pub async fn create_workout(&self, workout_uuid: &str, start_time: DateTime<Utc>) -> Result<i64> {
-        let start_time_str = start_time.to_rfc3339();
-        let result = sqlx::query(
-            "INSERT INTO workouts (workout_uuid, start_time, status) VALUES (?, ?, 'in_progress')"
-        )
-        .bind(workout_uuid)
-        .bind(&start_time_str)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(result.last_insert_rowid())
-    }
-
-    pub async fn complete_workout(
-        &self,
-        workout_id: i64,
-        end_time: DateTime<Utc>,
-        total_duration: i64,
-        total_distance: i64,
-        total_steps: i64,
-        avg_speed: f64,
-        max_speed: f64,
-        total_calories: i64,
-    ) -> Result<()> {
-        let end_time_str = end_time.to_rfc3339();
-        let updated_at = Utc::now().to_rfc3339();
-
-        sqlx::query(
-            "UPDATE workouts SET
-                end_time = ?,
-                status = 'completed',
-                total_duration = ?,
-                total_distance = ?,
-                total_steps = ?,
-                avg_speed = ?,
-                max_speed = ?,
-                total_calories = ?,
-                updated_at = ?
-             WHERE id = ?"
-        )
-        .bind(&end_time_str)
-        .bind(total_duration)
-        .bind(total_distance)
-        .bind(total_steps)
-        .bind(avg_speed)
-        .bind(max_speed)
-        .bind(total_calories)
-        .bind(&updated_at)
-        .bind(workout_id)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn get_current_workout(&self) -> Result<Option<Workout>> {
-        let workout = sqlx::query_as::<_, Workout>(
-            "SELECT * FROM workouts WHERE status = 'in_progress' ORDER BY start_time DESC LIMIT 1"
-        )
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(workout)
-    }
-
-    #[allow(dead_code)]
-    pub async fn get_workout(&self, id: i64) -> Result<Option<Workout>> {
-        let workout = sqlx::query_as::<_, Workout>("SELECT * FROM workouts WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(workout)
-    }
-
-    pub async fn get_workouts_after(&self, workout_id: i64, limit: i64) -> Result<Vec<Workout>> {
-        let workouts = sqlx::query_as::<_, Workout>(
-            "SELECT * FROM workouts WHERE id > ? AND status = 'completed' ORDER BY id ASC LIMIT ?"
-        )
-        .bind(workout_id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(workouts)
-    }
-
-    // Sample operations
+    /// Add a raw sample from the treadmill
     pub async fn add_sample(
         &self,
-        workout_id: i64,
         timestamp: DateTime<Utc>,
         speed: Option<f64>,
-        distance: Option<i64>,
-        calories: Option<i64>,
-        cadence: Option<i64>,
+        distance_total: Option<i64>,
+        calories_total: Option<i64>,
+        steps_total: Option<i64>,
+        distance_delta: Option<i64>,
+        calories_delta: Option<i64>,
+        steps_delta: Option<i64>,
     ) -> Result<()> {
-        let timestamp_str = timestamp.to_rfc3339();
+        let timestamp_unix = timestamp.timestamp();
 
         sqlx::query(
-            "INSERT INTO workout_samples
-             (workout_id, timestamp, speed, distance, calories, cadence)
-             VALUES (?, ?, ?, ?, ?, ?)"
+            "INSERT OR REPLACE INTO treadmill_samples
+             (timestamp, speed, distance_total, calories_total, steps_total,
+              distance_delta, calories_delta, steps_delta)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
         )
-        .bind(workout_id)
-        .bind(&timestamp_str)
+        .bind(timestamp_unix)
         .bind(speed)
-        .bind(distance)
-        .bind(calories)
-        .bind(cadence)
+        .bind(distance_total)
+        .bind(calories_total)
+        .bind(steps_total)
+        .bind(distance_delta)
+        .bind(calories_delta)
+        .bind(steps_delta)
         .execute(&self.pool)
         .await?;
 
         Ok(())
     }
 
-    pub async fn get_samples(&self, workout_id: i64) -> Result<Vec<WorkoutSample>> {
-        let samples = sqlx::query_as::<_, WorkoutSample>(
-            "SELECT * FROM workout_samples WHERE workout_id = ? ORDER BY timestamp ASC"
+    /// Get all samples for a specific date range
+    pub async fn get_samples_by_date_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Result<Vec<TreadmillSample>> {
+        let start_unix = start.timestamp();
+        let end_unix = end.timestamp();
+
+        let samples = sqlx::query_as::<_, TreadmillSample>(
+            "SELECT timestamp, speed, distance_total, calories_total, steps_total,
+                    distance_delta, calories_delta, steps_delta
+             FROM treadmill_samples
+             WHERE timestamp >= ? AND timestamp < ?
+             ORDER BY timestamp ASC"
         )
-        .bind(workout_id)
+        .bind(start_unix)
+        .bind(end_unix)
         .fetch_all(&self.pool)
         .await?;
 
         Ok(samples)
     }
 
-    pub async fn get_latest_sample(&self, workout_id: i64) -> Result<Option<WorkoutSample>> {
-        let sample = sqlx::query_as::<_, WorkoutSample>(
-            "SELECT * FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1"
+    /// Get samples for a specific date (convenience method)
+    pub async fn get_samples_for_date(&self, date: NaiveDate) -> Result<Vec<TreadmillSample>> {
+        let start = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
+            .and_utc();
+        let end = start + chrono::Duration::days(1);
+        self.get_samples_by_date_range(start, end).await
+    }
+
+    /// Get a daily summary for a specific date
+    /// Uses delta columns for accurate summation regardless of resets
+    pub async fn get_daily_summary(&self, date: NaiveDate) -> Result<Option<DailySummary>> {
+        let date_str = date.format("%Y-%m-%d").to_string();
+        let start = date.and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?
+            .and_utc();
+        let end = start + chrono::Duration::days(1);
+        let start_unix = start.timestamp();
+        let end_unix = end.timestamp();
+
+        // Get aggregated stats using delta columns
+        let summary = sqlx::query(
+            r#"
+            SELECT
+                COUNT(*) as total_samples,
+                COALESCE(SUM(distance_delta), 0) as distance_meters,
+                COALESCE(SUM(calories_delta), 0) as calories,
+                COALESCE(SUM(steps_delta), 0) as steps,
+                COALESCE(AVG(speed), 0) as avg_speed,
+                COALESCE(MAX(speed), 0) as max_speed,
+                MIN(timestamp) as first_timestamp,
+                MAX(timestamp) as last_timestamp
+            FROM treadmill_samples
+            WHERE timestamp >= ? AND timestamp < ?
+              AND speed > 0.0
+            "#
         )
-        .bind(workout_id)
+        .bind(start_unix)
+        .bind(end_unix)
+        .fetch_one(&self.pool)
+        .await?;
+
+        let total_samples: i64 = summary.get("total_samples");
+
+        if total_samples == 0 {
+            return Ok(None);
+        }
+
+        let distance_meters: i64 = summary.get("distance_meters");
+        let calories: i64 = summary.get("calories");
+        let steps: i64 = summary.get("steps");
+        let avg_speed: f64 = summary.get("avg_speed");
+        let max_speed: f64 = summary.get("max_speed");
+        let first_timestamp: i64 = summary.get("first_timestamp");
+        let last_timestamp: i64 = summary.get("last_timestamp");
+
+        let duration_seconds = last_timestamp - first_timestamp;
+
+        // Check if this date has been synced and get timestamp
+        let synced_at = self.get_sync_timestamp(&date_str).await?;
+        let is_synced = synced_at.is_some();
+
+        Ok(Some(DailySummary {
+            date: date_str,
+            total_samples,
+            duration_seconds,
+            distance_meters,
+            calories,
+            steps,
+            avg_speed,
+            max_speed,
+            is_synced,
+            synced_at,
+        }))
+    }
+
+    /// Get all dates that have activity (samples with speed > 0)
+    pub async fn get_activity_dates(&self) -> Result<Vec<String>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT DISTINCT DATE(timestamp, 'unixepoch') as date
+            FROM treadmill_samples
+            WHERE speed > 0.0
+            ORDER BY date DESC
+            "#
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        let dates = rows.iter().map(|row| row.get::<String, _>("date")).collect();
+        Ok(dates)
+    }
+
+    /// Mark a date as synced to Apple Health
+    pub async fn mark_date_synced(&self, date: &str) -> Result<()> {
+        let synced_at = Utc::now().timestamp();
+
+        sqlx::query(
+            "INSERT OR REPLACE INTO health_syncs (sync_date, synced_at) VALUES (?, ?)"
+        )
+        .bind(date)
+        .bind(synced_at)
+        .execute(&self.pool)
+        .await?;
+
+        Ok(())
+    }
+
+    /// Check if a date has been synced to Apple Health
+    pub async fn is_date_synced(&self, date: &str) -> Result<bool> {
+        let row = sqlx::query("SELECT sync_date FROM health_syncs WHERE sync_date = ?")
+            .bind(date)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(row.is_some())
+    }
+
+    /// Get sync info for a date (returns timestamp if synced)
+    pub async fn get_sync_timestamp(&self, date: &str) -> Result<Option<i64>> {
+        let row = sqlx::query("SELECT synced_at FROM health_syncs WHERE sync_date = ?")
+            .bind(date)
+            .fetch_optional(&self.pool)
+            .await?;
+
+        Ok(row.map(|r| r.get("synced_at")))
+    }
+
+    /// Get all synced dates
+    pub async fn get_synced_dates(&self) -> Result<Vec<HealthSync>> {
+        let syncs = sqlx::query_as::<_, HealthSync>(
+            "SELECT sync_date, synced_at FROM health_syncs ORDER BY sync_date DESC"
+        )
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(syncs)
+    }
+
+    /// Get the latest sample (for debugging/status)
+    pub async fn get_latest_sample(&self) -> Result<Option<TreadmillSample>> {
+        let sample = sqlx::query_as::<_, TreadmillSample>(
+            "SELECT timestamp, speed, distance_total, calories_total, steps_total
+             FROM treadmill_samples
+             ORDER BY timestamp DESC
+             LIMIT 1"
+        )
         .fetch_optional(&self.pool)
         .await?;
 
         Ok(sample)
     }
 
-    /// Get the most recent N samples for a workout (efficient for live view)
-    pub async fn get_recent_samples(&self, workout_id: i64, limit: i64) -> Result<Vec<WorkoutSample>> {
-        let samples = sqlx::query_as::<_, WorkoutSample>(
-            "SELECT * FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT ?"
-        )
-        .bind(workout_id)
-        .bind(limit)
-        .fetch_all(&self.pool)
-        .await?;
-
-        // Reverse to get chronological order (oldest to newest)
-        Ok(samples.into_iter().rev().collect())
-    }
-
-    pub async fn get_sample_count(&self, workout_id: i64) -> Result<i64> {
-        let row = sqlx::query(
-            "SELECT COUNT(*) as count FROM workout_samples WHERE workout_id = ?"
-        )
-        .bind(workout_id)
-        .fetch_one(&self.pool)
-        .await?;
+    /// Get total sample count (for debugging/stats)
+    pub async fn get_total_sample_count(&self) -> Result<i64> {
+        let row = sqlx::query("SELECT COUNT(*) as count FROM treadmill_samples")
+            .fetch_one(&self.pool)
+            .await?;
 
         Ok(row.get("count"))
     }
-
-    pub async fn get_first_sample_timestamp(&self, workout_id: i64) -> Result<Option<String>> {
-        let row = sqlx::query(
-            "SELECT timestamp FROM workout_samples WHERE workout_id = ? ORDER BY timestamp ASC LIMIT 1"
-        )
-        .bind(workout_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(row.map(|r| r.get("timestamp")))
-    }
-
-    // Sync client operations
-    pub async fn register_sync_client(&self, device_id: &str, device_name: Option<&str>) -> Result<()> {
-        let last_seen = Utc::now().to_rfc3339();
-
-        sqlx::query(
-            "INSERT INTO sync_clients (device_id, device_name, last_seen)
-             VALUES (?, ?, ?)
-             ON CONFLICT(device_id) DO UPDATE SET
-                device_name = COALESCE(excluded.device_name, device_name),
-                last_seen = excluded.last_seen"
-        )
-        .bind(device_id)
-        .bind(device_name)
-        .bind(&last_seen)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    pub async fn get_sync_client(&self, device_id: &str) -> Result<Option<SyncClient>> {
-        let client = sqlx::query_as::<_, SyncClient>(
-            "SELECT * FROM sync_clients WHERE device_id = ?"
-        )
-        .bind(device_id)
-        .fetch_optional(&self.pool)
-        .await?;
-
-        Ok(client)
-    }
-
-    pub async fn update_sync_checkpoint(&self, device_id: &str, workout_id: i64) -> Result<()> {
-        sqlx::query(
-            "UPDATE sync_clients SET last_synced_workout_id = ? WHERE device_id = ?"
-        )
-        .bind(workout_id)
-        .bind(device_id)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    // Workout cleanup operations
-    pub async fn delete_workout(&self, workout_id: i64) -> Result<()> {
-        sqlx::query("DELETE FROM workouts WHERE id = ?")
-            .bind(workout_id)
-            .execute(&self.pool)
-            .await?;
-
-        Ok(())
-    }
-
-    pub async fn mark_workout_failed(&self, workout_id: i64, reason: &str) -> Result<()> {
-        let updated_at = chrono::Utc::now().to_rfc3339();
-
-        sqlx::query(
-            "UPDATE workouts SET status = 'failed', updated_at = ? WHERE id = ?"
-        )
-        .bind(&updated_at)
-        .bind(workout_id)
-        .execute(&self.pool)
-        .await?;
-
-        tracing::warn!("Marked workout {} as failed: {}", workout_id, reason);
-        Ok(())
-    }
-
-    // Database aggregation for performance
-    pub async fn get_workout_aggregates(&self, workout_id: i64) -> Result<WorkoutAggregates> {
-        let row = sqlx::query(
-            r#"
-            SELECT
-                COUNT(*) as count,
-                (SELECT distance FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_distance,
-                (SELECT cadence FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_steps,
-                (SELECT calories FROM workout_samples WHERE workout_id = ? ORDER BY timestamp DESC LIMIT 1) as total_calories,
-                AVG(speed) as avg_speed,
-                MAX(speed) as max_speed,
-                MIN(timestamp) as first_timestamp,
-                MAX(timestamp) as last_timestamp
-            FROM workout_samples
-            WHERE workout_id = ?
-            "#
-        )
-        .bind(workout_id)
-        .bind(workout_id)
-        .bind(workout_id)
-        .bind(workout_id)
-        .fetch_one(&self.pool)
-        .await?;
-
-        Ok(WorkoutAggregates {
-            sample_count: row.get::<i64, _>("count") as usize,
-            total_distance: row.get::<Option<i64>, _>("total_distance").unwrap_or(0),
-            total_steps: row.get::<Option<i64>, _>("total_steps").unwrap_or(0),
-            total_calories: row.get::<Option<i64>, _>("total_calories").unwrap_or(0),
-            avg_speed: row.get::<Option<f64>, _>("avg_speed").unwrap_or(0.0),
-            max_speed: row.get::<Option<f64>, _>("max_speed").unwrap_or(0.0),
-            first_timestamp: row.get::<Option<String>, _>("first_timestamp"),
-            last_timestamp: row.get::<Option<String>, _>("last_timestamp"),
-        })
-    }
-}
-
-#[derive(Debug)]
-pub struct WorkoutAggregates {
-    pub sample_count: usize,
-    pub total_distance: i64,
-    pub total_steps: i64,
-    pub total_calories: i64,
-    pub avg_speed: f64,
-    pub max_speed: f64,
-    pub first_timestamp: Option<String>,
-    pub last_timestamp: Option<String>,
 }

@@ -1,14 +1,18 @@
 import SwiftUI
 
 struct ContentView: View {
-    @EnvironmentObject var syncManager: SyncManager
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
         TabView {
-            WorkoutListView()
+            TodayView()
                 .tabItem {
-                    Label("Workouts", systemImage: "figure.walk")
+                    Label("Today", systemImage: "calendar.badge.clock")
+                }
+
+            HistoryView()
+                .tabItem {
+                    Label("History", systemImage: "calendar")
                 }
 
             SettingsView()

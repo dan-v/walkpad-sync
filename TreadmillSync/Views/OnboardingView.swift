@@ -1,7 +1,6 @@
 import SwiftUI
 
 struct OnboardingView: View {
-    @EnvironmentObject var syncManager: SyncManager
     @Binding var hasCompletedOnboarding: Bool
     @State private var currentPage = 0
     @State private var showingServerSetup = false
@@ -150,5 +149,4 @@ struct OnboardingFeature: View {
 
 #Preview {
     OnboardingView(hasCompletedOnboarding: .constant(false))
-        .environmentObject(SyncManager())
 }
