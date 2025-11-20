@@ -77,9 +77,36 @@ class HealthKitManager: ObservableObject {
             healthStore.execute(query)
         }
 
-        // Delete all found workouts
+        // Delete all samples (steps, distance, calories) in this date range
         if !workouts.isEmpty {
-            print("🗑️ Deleting \(workouts.count) existing workouts")
+            print("🗑️ Deleting samples (steps, distance, calories) from \(dayStart) to \(dayEnd)")
+
+            let sampleTypes = [
+                HKQuantityType.quantityType(forIdentifier: .stepCount),
+                HKQuantityType.quantityType(forIdentifier: .distanceWalkingRunning),
+                HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+            ].compactMap { $0 }
+
+            for sampleType in sampleTypes {
+                let samplePredicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: [])
+                let samples = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKSample], Error>) in
+                    let query = HKSampleQuery(sampleType: sampleType, predicate: samplePredicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                        if let error = error {
+                            continuation.resume(throwing: error)
+                            return
+                        }
+                        continuation.resume(returning: samples ?? [])
+                    }
+                    healthStore.execute(query)
+                }
+
+                if !samples.isEmpty {
+                    print("   Deleting \(samples.count) samples of type \(sampleType)")
+                    try await healthStore.delete(samples)
+                }
+            }
+
+            print("🗑️ Deleting \(workouts.count) workouts")
             try await healthStore.delete(workouts)
             print("✅ Deleted successfully")
         } else {
