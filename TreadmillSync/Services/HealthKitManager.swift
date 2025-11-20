@@ -31,6 +31,49 @@ class HealthKitManager: ObservableObject {
         try await healthStore.requestAuthorization(toShare: typesToWrite, read: [])
     }
 
+    // MARK: - Delete Existing Workouts
+
+    /// Delete any existing workouts for a specific date to prevent duplicates
+    private func deleteExistingWorkouts(for date: String) async throws {
+        // Parse the date string to get start/end of day
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone.current
+
+        guard let dayStart = formatter.date(from: date) else {
+            return
+        }
+
+        let calendar = Calendar.current
+        guard let dayEnd = calendar.date(byAdding: .day, value: 1, to: dayStart) else {
+            return
+        }
+
+        // Query for workouts in this date range with our app's metadata
+        let workoutType = HKObjectType.workoutType()
+        let predicate = HKQuery.predicateForSamples(withStart: dayStart, end: dayEnd, options: .strictStartDate)
+
+        // Create a query to find existing workouts
+        let workouts = try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKWorkout], Error>) in
+            let query = HKSampleQuery(sampleType: workoutType, predicate: predicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, samples, error in
+                if let error = error {
+                    continuation.resume(throwing: error)
+                    return
+                }
+
+                let workouts = samples as? [HKWorkout] ?? []
+                continuation.resume(returning: workouts)
+            }
+
+            healthStore.execute(query)
+        }
+
+        // Delete all found workouts
+        if !workouts.isEmpty {
+            try await healthStore.delete(workouts)
+        }
+    }
+
     // MARK: - Save Workout from Date
 
     func saveWorkout(
@@ -44,6 +87,9 @@ class HealthKitManager: ObservableObject {
               let lastSample = samples.last else {
             throw HealthKitError.invalidData
         }
+
+        // Delete any existing workouts for this date first (prevents duplicates)
+        try await deleteExistingWorkouts(for: date)
 
         let startDate = firstSample.date
         let endDate = lastSample.date
