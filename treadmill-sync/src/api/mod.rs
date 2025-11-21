@@ -1,7 +1,7 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::IntoResponse,
+    response::{Html, IntoResponse},
     routing::get,
     Json, Router,
 };
@@ -25,14 +25,24 @@ pub struct AppState {
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(serve_dashboard))
+        .route("/dashboard", get(serve_dashboard))
         .route("/api/health", get(health_check))
         .route("/api/dates", get(get_activity_dates))
         .route("/api/dates/:date/summary", get(get_date_summary))
         .route("/api/dates/:date/samples", get(get_date_samples))
         .route("/api/samples", get(get_samples_by_range))
         .route("/api/stats", get(get_stats))
+        // Alias routes for dashboard compatibility
+        .route("/api/activity/dates", get(get_activity_dates))
+        .route("/api/activity/summary/:date", get(get_date_summary))
         .route("/ws/live", get(crate::websocket::ws_handler))
         .with_state(state)
+}
+
+// Serve embedded dashboard
+async fn serve_dashboard() -> Html<&'static str> {
+    Html(include_str!("../static/dashboard.html"))
 }
 
 // Health check endpoint
