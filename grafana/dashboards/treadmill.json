@@ -59,7 +59,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
+          "queryText": "SELECT SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "queryType": "table",
           "refId": "A"
         }
       ],
@@ -117,7 +118,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(distance_delta) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
+          "queryText": "SELECT SUM(distance_delta) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "queryType": "table",
           "refId": "A"
         }
       ],
@@ -174,7 +176,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
+          "queryText": "SELECT SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "queryType": "table",
           "refId": "A"
         }
       ],
@@ -232,7 +235,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT COUNT(*) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
+          "queryText": "SELECT COUNT(*) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "queryType": "table",
           "refId": "A"
         }
       ],
@@ -318,7 +322,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT DATE(timestamp, 'unixepoch') as time, SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryType": "time",
           "refId": "A"
         }
       ],
@@ -405,7 +410,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT DATE(timestamp, 'unixepoch') as time, CAST(SUM(distance_delta) AS REAL) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(SUM(distance_delta) AS REAL) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryType": "time",
           "refId": "A"
         }
       ],
@@ -491,7 +497,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT DATE(timestamp, 'unixepoch') as time, SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryType": "time",
           "refId": "A"
         }
       ],
@@ -578,7 +585,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT DATE(timestamp, 'unixepoch') as time, CAST(COUNT(*) AS REAL) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(COUNT(*) AS REAL) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "queryType": "time",
           "refId": "A"
         }
       ],
@@ -664,7 +672,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT strftime('%Y-%m-%d %H:00:00', timestamp, 'unixepoch') as time, AVG(speed) as 'Avg Speed (m/s)', MAX(speed) as 'Max Speed (m/s)' FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY strftime('%Y-%m-%d %H', timestamp, 'unixepoch') ORDER BY time",
+          "queryText": "SELECT strftime('%s', strftime('%Y-%m-%d %H:00:00', timestamp, 'unixepoch')) as time, AVG(speed) as 'Avg Speed (m/s)', MAX(speed) as 'Max Speed (m/s)' FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY strftime('%Y-%m-%d %H', timestamp, 'unixepoch') ORDER BY time",
+          "queryType": "time",
           "refId": "A"
         }
       ],
@@ -788,7 +797,8 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT DATE(timestamp, 'unixepoch') as Date, SUM(steps_delta) as Steps, CAST(SUM(distance_delta) AS REAL) / 1000.0 as 'Distance (km)', SUM(calories_delta) as Calories, CAST(COUNT(*) AS REAL) / 60.0 as Minutes FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY Date DESC",
+          "queryText": "SELECT DATE(timestamp, 'unixepoch') as Date, SUM(steps_delta) as Steps, CAST(SUM(distance_delta) AS REAL) / 1000.0 as 'Distance (km)', SUM(calories_delta) as Calories, CAST(COUNT(*) AS REAL) / 60.0 as Minutes FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY Date DESC",
+          "queryType": "table",
           "refId": "A"
         }
       ],
