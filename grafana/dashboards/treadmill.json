@@ -59,7 +59,7 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(daily_steps) as value FROM (SELECT DATE(timestamp, 'unixepoch') as day, SUM(steps_delta) as daily_steps FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY day)",
+          "rawSql": "SELECT SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
           "refId": "A"
         }
       ],
@@ -117,7 +117,7 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(daily_distance) / 1000.0 as value FROM (SELECT DATE(timestamp, 'unixepoch') as day, SUM(distance_delta) as daily_distance FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY day)",
+          "rawSql": "SELECT SUM(distance_delta) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
           "refId": "A"
         }
       ],
@@ -174,7 +174,7 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(daily_calories) as value FROM (SELECT DATE(timestamp, 'unixepoch') as day, SUM(calories_delta) as daily_calories FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY day)",
+          "rawSql": "SELECT SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
           "refId": "A"
         }
       ],
@@ -232,7 +232,7 @@
             "type": "frser-sqlite-datasource",
             "uid": "treadmill"
           },
-          "rawSql": "SELECT SUM(daily_minutes) as value FROM (SELECT DATE(timestamp, 'unixepoch') as day, COUNT(*) / 60.0 as daily_minutes FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0 GROUP BY day)",
+          "rawSql": "SELECT COUNT(*) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__unixEpochFrom() AND timestamp < $__unixEpochTo() AND speed > 0.0",
           "refId": "A"
         }
       ],
