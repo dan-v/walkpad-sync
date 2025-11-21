@@ -736,8 +736,8 @@ class HistoryViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
 
                 // Reload to get updated sync status
                 await loadData()

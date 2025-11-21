@@ -127,9 +127,9 @@ class ActivityDetailViewModel: ObservableObject {
             )
             print("✅ Saved to HealthKit")
 
-            // Mark as synced on server
-            try await apiClient.markDateSynced(date: summary.date)
-            print("✅ Marked as synced on server")
+            // Mark as synced locally
+            SyncStateManager.shared.markAsSynced(summary: summary)
+            print("✅ Marked as synced locally")
 
             showSuccessAlert = true
         } catch {

@@ -340,8 +340,8 @@ class TodayViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
             }
 
             // Reload to update sync status

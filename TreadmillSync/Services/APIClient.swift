@@ -113,55 +113,6 @@ actor APIClient {
         return result.samples
     }
 
-    // MARK: - Mark as Synced
-
-    func markDateSynced(date: String) async throws {
-        guard var urlComponents = URLComponents(string: "\(config.baseURL)/api/dates/\(date)/sync") else {
-            throw APIError.invalidURL
-        }
-
-        // Add timezone offset query parameter
-        urlComponents.queryItems = [
-            URLQueryItem(name: "tz_offset", value: "\(timezoneOffsetSeconds)")
-        ]
-
-        guard let url = urlComponents.url else {
-            throw APIError.invalidURL
-        }
-
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.serverError
-        }
-
-        if !(200...299).contains(httpResponse.statusCode) {
-            let responseBody = String(data: data, encoding: .utf8) ?? "Unknown error"
-            print("❌ Server error \(httpResponse.statusCode): \(responseBody)")
-            throw APIError.serverError
-        }
-    }
-
-    // MARK: - Get Synced Dates
-
-    func fetchSyncedDates() async throws -> [HealthSync] {
-        guard let url = URL(string: "\(config.baseURL)/api/dates/synced") else {
-            throw APIError.invalidURL
-        }
-
-        let (data, response) = try await session.data(from: url)
-
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
-        }
-
-        let result = try JSONDecoder().decode(SyncedDatesResponse.self, from: data)
-        return result.syncedDates
-    }
 }
 
 // MARK: - Errors

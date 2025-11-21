@@ -55,8 +55,6 @@ struct DailySummary: Codable, Identifiable {
     let steps: Int64
     let avgSpeed: Double // m/s
     let maxSpeed: Double
-    let isSynced: Bool
-    let syncedAt: Int64? // Unix timestamp when synced (nil if not synced)
 
     var id: String { date }
 
@@ -69,8 +67,11 @@ struct DailySummary: Codable, Identifiable {
         case steps
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
-        case isSynced = "is_synced"
-        case syncedAt = "synced_at"
+    }
+
+    // Sync state (now tracked locally, not from server)
+    var isSynced: Bool {
+        SyncStateManager.shared.isSynced(date)
     }
 
     // Computed properties for display
@@ -116,19 +117,11 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var syncedAtFormatted: String? {
-        guard let syncedAt = syncedAt else { return nil }
-        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return "Synced " + formatter.localizedString(for: date, relativeTo: Date())
+        SyncStateManager.shared.getSyncedAtFormatted(for: date)
     }
 
     var syncedAtShort: String? {
-        guard let syncedAt = syncedAt else { return nil }
-        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        SyncStateManager.shared.getSyncedAtShort(for: date)
     }
 
     var dayOfWeek: String {
@@ -179,20 +172,3 @@ struct TreadmillSample: Codable, Identifiable {
     }
 }
 
-struct SyncedDatesResponse: Codable {
-    let syncedDates: [HealthSync]
-
-    enum CodingKeys: String, CodingKey {
-        case syncedDates = "synced_dates"
-    }
-}
-
-struct HealthSync: Codable {
-    let syncDate: String // YYYY-MM-DD
-    let syncedAt: Int64 // Unix timestamp
-
-    enum CodingKeys: String, CodingKey {
-        case syncDate = "sync_date"
-        case syncedAt = "synced_at"
-    }
-}
