@@ -417,6 +417,13 @@
                     }
                 },
                 dataLabels: { enabled: false },
+                markers: {
+                    size: 4,
+                    colors: undefined,
+                    strokeColors: '#fff',
+                    strokeWidth: 2,
+                    hover: { size: 6 }
+                },
                 xaxis: {
                     type: 'datetime',
                     labels: {
@@ -426,7 +433,8 @@
                 yaxis: {
                     labels: {
                         style: { colors: '#86868b', fontSize: '12px' }
-                    }
+                    },
+                    min: 0
                 },
                 grid: {
                     borderColor: '#f5f5f7',
@@ -526,19 +534,22 @@
         }
 
         function updateCharts(summaries) {
-            const stepsData = summaries.reverse().map(s => ({
+            // Don't mutate the original array - make a copy for reversing
+            const sortedSummaries = [...summaries].reverse();
+
+            const stepsData = sortedSummaries.map(s => ({
                 x: new Date(s.date).getTime(),
                 y: s.steps
             }));
             charts.steps.updateSeries([{ data: stepsData }]);
 
-            const distanceData = summaries.map(s => ({
+            const distanceData = sortedSummaries.map(s => ({
                 x: new Date(s.date).getTime(),
                 y: parseFloat((s.distance_meters / 1609.34).toFixed(2))
             }));
             charts.distance.updateSeries([{ data: distanceData }]);
 
-            const caloriesData = summaries.map(s => ({
+            const caloriesData = sortedSummaries.map(s => ({
                 x: new Date(s.date).getTime(),
                 y: s.calories
             }));
@@ -581,11 +592,12 @@
             document.getElementById('totalCalories').textContent = formatNumber(total.calories);
             document.getElementById('totalTime').textContent = formatDuration(total.duration);
 
+            // Only show comparison if we have at least 4 days of data (2 in each period)
             const periodLength = summaries.length;
-            const currentPeriod = summaries.slice(0, Math.floor(periodLength / 2));
-            const previousPeriod = summaries.slice(Math.floor(periodLength / 2));
+            if (periodLength >= 4) {
+                const currentPeriod = summaries.slice(0, Math.floor(periodLength / 2));
+                const previousPeriod = summaries.slice(Math.floor(periodLength / 2));
 
-            if (previousPeriod.length > 0) {
                 const currentSteps = currentPeriod.reduce((sum, s) => sum + s.steps, 0);
                 const prevSteps = previousPeriod.reduce((sum, s) => sum + s.steps, 0);
                 const change = prevSteps > 0 ? ((currentSteps - prevSteps) / prevSteps * 100).toFixed(1) : 0;
@@ -606,10 +618,15 @@
                 const timeChange = prevTime > 0 ? ((currentTime - prevTime) / prevTime * 100).toFixed(1) : 0;
                 document.getElementById('timeChange').textContent = `${timeChange >= 0 ? '+' : ''}${timeChange}% vs previous period`;
             } else {
-                document.getElementById('stepsChange').textContent = 'No comparison available';
-                document.getElementById('distanceChange').textContent = 'No comparison available';
-                document.getElementById('caloriesChange').textContent = 'No comparison available';
-                document.getElementById('timeChange').textContent = 'No comparison available';
+                // Not enough data for meaningful comparison
+                const daysNeeded = 4 - periodLength;
+                const message = periodLength === 0 ? 'No data yet' :
+                               periodLength === 1 ? 'Need 3 more days for comparison' :
+                               `Need ${daysNeeded} more days for comparison`;
+                document.getElementById('stepsChange').textContent = message;
+                document.getElementById('distanceChange').textContent = message;
+                document.getElementById('caloriesChange').textContent = message;
+                document.getElementById('timeChange').textContent = message;
             }
         }
 
