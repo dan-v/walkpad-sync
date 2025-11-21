@@ -1,4 +1,4 @@
-FROM rust:1.75 as builder
+FROM rust:1.91 AS builder
 
 WORKDIR /usr/src/app
 
@@ -35,8 +35,8 @@ COPY --from=builder /usr/src/app/target/release/treadmill-sync /usr/local/bin/tr
 # Create data directory
 RUN mkdir -p /data
 
-# Copy config
-COPY config.toml /etc/treadmill-sync/config.toml
+# Copy config template (will be overridden by docker-compose volume)
+COPY config.example.toml /etc/treadmill-sync/config.toml
 
 WORKDIR /data
 
