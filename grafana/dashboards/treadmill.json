@@ -47,7 +47,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "textMode": "auto"
@@ -61,7 +63,12 @@
           },
           "queryText": "SELECT SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
           "queryType": "table",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Total Steps",
@@ -106,7 +113,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "textMode": "auto"
@@ -120,7 +129,12 @@
           },
           "queryText": "SELECT SUM(distance_delta) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
           "queryType": "table",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT SUM(distance_delta) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Total Distance",
@@ -164,7 +178,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "textMode": "auto"
@@ -178,7 +194,12 @@
           },
           "queryText": "SELECT SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
           "queryType": "table",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Total Calories",
@@ -223,7 +244,9 @@
         "orientation": "auto",
         "reduceOptions": {
           "values": false,
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": ""
         },
         "textMode": "auto"
@@ -237,7 +260,12 @@
           },
           "queryText": "SELECT COUNT(*) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
           "queryType": "table",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT COUNT(*) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Total Active Time",
@@ -306,7 +334,11 @@
       "id": 1,
       "options": {
         "legend": {
-          "calcs": ["sum", "mean", "max"],
+          "calcs": [
+            "sum",
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -324,7 +356,12 @@
           },
           "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
           "queryType": "time",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(steps_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Steps Per Day",
@@ -394,7 +431,11 @@
       "id": 2,
       "options": {
         "legend": {
-          "calcs": ["sum", "mean", "max"],
+          "calcs": [
+            "sum",
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -412,7 +453,12 @@
           },
           "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(SUM(distance_delta) AS REAL) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
           "queryType": "time",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(SUM(distance_delta) AS REAL) / 1000.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Distance Per Day (km)",
@@ -481,7 +527,11 @@
       "id": 3,
       "options": {
         "legend": {
-          "calcs": ["sum", "mean", "max"],
+          "calcs": [
+            "sum",
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -499,7 +549,12 @@
           },
           "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
           "queryType": "time",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, SUM(calories_delta) as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Calories Per Day",
@@ -569,7 +624,11 @@
       "id": 4,
       "options": {
         "legend": {
-          "calcs": ["sum", "mean", "max"],
+          "calcs": [
+            "sum",
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -587,7 +646,12 @@
           },
           "queryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(COUNT(*) AS REAL) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
           "queryType": "time",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%s', DATE(timestamp, 'unixepoch')) as time, CAST(COUNT(*) AS REAL) / 60.0 as value FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY time",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Active Time Per Day (minutes)",
@@ -656,7 +720,10 @@
       "id": 9,
       "options": {
         "legend": {
-          "calcs": ["mean", "max"],
+          "calcs": [
+            "mean",
+            "max"
+          ],
           "displayMode": "table",
           "placement": "bottom",
           "showLegend": true
@@ -674,7 +741,12 @@
           },
           "queryText": "SELECT strftime('%s', strftime('%Y-%m-%d %H:00:00', timestamp, 'unixepoch')) as time, AVG(speed) as 'Avg Speed (m/s)', MAX(speed) as 'Max Speed (m/s)' FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY strftime('%Y-%m-%d %H', timestamp, 'unixepoch') ORDER BY time",
           "queryType": "time",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT strftime('%s', strftime('%Y-%m-%d %H:00:00', timestamp, 'unixepoch')) as time, AVG(speed) as 'Avg Speed (m/s)', MAX(speed) as 'Max Speed (m/s)' FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY strftime('%Y-%m-%d %H', timestamp, 'unixepoch') ORDER BY time",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Speed Over Time",
@@ -779,7 +851,9 @@
         "footer": {
           "countRows": false,
           "fields": "",
-          "reducer": ["sum"],
+          "reducer": [
+            "sum"
+          ],
           "show": true
         },
         "showHeader": true,
@@ -799,7 +873,12 @@
           },
           "queryText": "SELECT DATE(timestamp, 'unixepoch') as Date, SUM(steps_delta) as Steps, CAST(SUM(distance_delta) AS REAL) / 1000.0 as 'Distance (km)', SUM(calories_delta) as Calories, CAST(COUNT(*) AS REAL) / 60.0 as Minutes FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY Date DESC",
           "queryType": "table",
-          "refId": "A"
+          "refId": "A",
+          "rawQueryText": "SELECT DATE(timestamp, 'unixepoch') as Date, SUM(steps_delta) as Steps, CAST(SUM(distance_delta) AS REAL) / 1000.0 as 'Distance (km)', SUM(calories_delta) as Calories, CAST(COUNT(*) AS REAL) / 60.0 as Minutes FROM treadmill_samples WHERE timestamp >= $__from / 1000 AND timestamp < $__to / 1000 AND speed > 0.0 GROUP BY DATE(timestamp, 'unixepoch') ORDER BY Date DESC",
+          "timeColumns": [
+            "time",
+            "ts"
+          ]
         }
       ],
       "title": "Daily Summary Table",
@@ -809,7 +888,10 @@
   "refresh": "",
   "schemaVersion": 38,
   "style": "dark",
-  "tags": ["treadmill", "fitness"],
+  "tags": [
+    "treadmill",
+    "fitness"
+  ],
   "templating": {
     "list": []
   },
