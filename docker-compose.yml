@@ -14,6 +14,7 @@ services:
       - GF_INSTALL_PLUGINS=frser-sqlite-datasource
       - GF_AUTH_ANONYMOUS_ENABLED=true
       - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=frser-sqlite-datasource
     restart: unless-stopped
 
 volumes:
