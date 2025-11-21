@@ -394,6 +394,12 @@
             return `${mins}:${secs.toString().padStart(2, '0')}`;
         }
 
+        function parseLocalDate(dateStr) {
+            // Parse YYYY-MM-DD as local date, not UTC
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(year, month - 1, day);
+        }
+
         function getTimeRange() {
             return parseInt(document.getElementById('timeRange').value);
         }
@@ -635,7 +641,7 @@
             const tbody = document.getElementById('recentActivityTable');
             tbody.innerHTML = summaries.slice(0, 10).map(s => `
                 <tr>
-                    <td>${new Date(s.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</td>
+                    <td>${parseLocalDate(s.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</td>
                     <td>${formatNumber(s.steps)}</td>
                     <td>${formatDistance(s.distance_meters)}</td>
                     <td>${formatNumber(s.calories)}</td>
