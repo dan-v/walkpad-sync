@@ -2,15 +2,17 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Json, Router,
 };
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 use crate::storage::{DailySummary, Storage, TreadmillSample};
+use crate::websocket::WsMessage;
 
 // Validation constants
 const MAX_DATE_RANGE_DAYS: i64 = 365;
@@ -18,6 +20,7 @@ const MAX_DATE_RANGE_DAYS: i64 = 365;
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<Storage>,
+    pub ws_tx: broadcast::Sender<WsMessage>,
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -28,6 +31,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/api/dates/:date/samples", get(get_date_samples))
         .route("/api/samples", get(get_samples_by_range))
         .route("/api/stats", get(get_stats))
+        .route("/ws/live", get(crate::websocket::ws_handler))
         .with_state(state)
 }
 

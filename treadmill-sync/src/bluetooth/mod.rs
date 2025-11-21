@@ -15,6 +15,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::BluetoothConfig;
 use crate::storage::Storage;
+use crate::websocket::{broadcast_sample, WsMessage};
 use ftms::{
     parse_treadmill_data, parse_lifespan_response, TreadmillData,
     TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, LifeSpanQuery,
@@ -33,6 +34,7 @@ pub struct BluetoothManager {
     storage: Arc<Storage>,
     config: BluetoothConfig,
     status_tx: broadcast::Sender<ConnectionStatus>,
+    ws_tx: broadcast::Sender<WsMessage>,
     // Track last seen cumulative values for delta calculation
     last_distance: Arc<RwLock<Option<i64>>>,
     last_calories: Arc<RwLock<Option<i64>>>,
@@ -43,6 +45,7 @@ impl BluetoothManager {
     pub fn new(
         storage: Arc<Storage>,
         config: BluetoothConfig,
+        ws_tx: broadcast::Sender<WsMessage>,
     ) -> (Self, broadcast::Receiver<ConnectionStatus>) {
         let (status_tx, status_rx) = broadcast::channel(16);
 
@@ -50,6 +53,7 @@ impl BluetoothManager {
             storage,
             config,
             status_tx,
+            ws_tx,
             last_distance: Arc::new(RwLock::new(None)),
             last_calories: Arc::new(RwLock::new(None)),
             last_steps: Arc::new(RwLock::new(None)),
@@ -449,6 +453,19 @@ impl BluetoothManager {
             calories_delta,
             steps_delta,
         ).await?;
+
+        // Broadcast to WebSocket clients
+        let sample = crate::storage::TreadmillSample {
+            timestamp: timestamp.timestamp(),
+            speed: data.speed,
+            distance_total: data.distance.map(|d| d as i64),
+            calories_total: data.total_energy.map(|e| e as i64),
+            steps_total: data.steps.map(|s| s as i64),
+            distance_delta,
+            calories_delta,
+            steps_delta,
+        };
+        broadcast_sample(&self.ws_tx, &sample);
 
         Ok(())
     }
