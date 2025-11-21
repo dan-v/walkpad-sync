@@ -574,7 +574,10 @@ class HistoryViewModel: ObservableObject {
 
             if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
                 streak += 1
-                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
+                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
+                    break
+                }
+                expectedDate = previousDate
             } else {
                 break
             }
@@ -706,6 +709,12 @@ class HistoryViewModel: ObservableObject {
     }
 
     func loadData() async {
+        // Prevent concurrent execution with sync operation
+        guard !isSyncing else {
+            print("⚠️ Skipping loadData - sync in progress")
+            return
+        }
+
         isLoading = true
 
         do {
@@ -733,6 +742,12 @@ class HistoryViewModel: ObservableObject {
     }
 
     func syncAll() async {
+        // Prevent concurrent execution with load operation
+        guard !isLoading else {
+            print("⚠️ Skipping syncAll - load in progress")
+            return
+        }
+
         isSyncing = true
         syncError = nil
 

@@ -7,6 +7,7 @@ class SyncStateManager {
 
     private let defaults = UserDefaults.standard
     private let syncStateKey = "treadmill_sync_state"
+    private let lock = NSLock()
 
     private init() {}
 
@@ -24,6 +25,9 @@ class SyncStateManager {
 
     /// Mark a date as synced with the current summary data
     func markAsSynced(summary: DailySummary) {
+        lock.lock()
+        defer { lock.unlock() }
+
         var states = getAllSyncStates()
 
         let newState = SyncState(
@@ -93,6 +97,9 @@ class SyncStateManager {
 
     /// Clear sync state for a specific date (useful if user wants to force re-sync)
     func clearSyncState(for date: String) {
+        lock.lock()
+        defer { lock.unlock() }
+
         var states = getAllSyncStates()
         states.removeValue(forKey: date)
         saveSyncStates(states)
@@ -100,6 +107,9 @@ class SyncStateManager {
 
     /// Clear all sync states (useful for debugging/reset)
     func clearAllSyncStates() {
+        lock.lock()
+        defer { lock.unlock() }
+
         defaults.removeObject(forKey: syncStateKey)
     }
 

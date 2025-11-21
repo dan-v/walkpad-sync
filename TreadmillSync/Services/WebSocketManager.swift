@@ -41,13 +41,19 @@ actor WebSocketManager {
         }
 
         // Build WebSocket URL
-        let wsURL: URL
+        let wsURLString: String
         if config.baseURL.hasPrefix("http://") {
-            wsURL = URL(string: config.baseURL.replacingOccurrences(of: "http://", with: "ws://") + "/ws/live")!
+            wsURLString = config.baseURL.replacingOccurrences(of: "http://", with: "ws://") + "/ws/live"
         } else if config.baseURL.hasPrefix("https://") {
-            wsURL = URL(string: config.baseURL.replacingOccurrences(of: "https://", with: "wss://") + "/ws/live")!
+            wsURLString = config.baseURL.replacingOccurrences(of: "https://", with: "wss://") + "/ws/live"
         } else {
-            wsURL = URL(string: "ws://\(config.baseURL)/ws/live")!
+            wsURLString = "ws://\(config.baseURL)/ws/live"
+        }
+
+        guard let wsURL = URL(string: wsURLString) else {
+            print("❌ Invalid WebSocket URL: \(wsURLString)")
+            connectionStatusSubject.send(.error("Invalid server URL"))
+            return
         }
 
         print("🔌 Connecting to WebSocket: \(wsURL.absoluteString)")
