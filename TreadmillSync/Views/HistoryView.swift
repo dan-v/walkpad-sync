@@ -710,17 +710,23 @@ class HistoryViewModel: ObservableObject {
 
         do {
             let dates = try await apiClient.fetchActivityDates()
+            print("📅 Fetched \(dates.count) activity dates: \(dates)")
 
             var loadedSummaries: [DailySummary] = []
             for date in dates {
-                if let summary = try? await apiClient.fetchDailySummary(date: date) {
+                do {
+                    let summary = try await apiClient.fetchDailySummary(date: date)
                     loadedSummaries.append(summary)
+                    print("✅ Loaded summary for \(date): \(summary.steps) steps")
+                } catch {
+                    print("❌ Failed to load summary for \(date): \(error)")
                 }
             }
 
             dailySummaries = loadedSummaries.sorted { $0.date < $1.date }
+            print("📊 Total summaries loaded: \(dailySummaries.count)")
         } catch {
-            print("Error loading stats: \(error)")
+            print("❌ Error loading stats: \(error)")
         }
 
         isLoading = false
