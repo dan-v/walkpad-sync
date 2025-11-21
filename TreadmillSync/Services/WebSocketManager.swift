@@ -20,7 +20,7 @@ actor WebSocketManager {
         sampleSubject.eraseToAnyPublisher()
     }
 
-    enum ConnectionStatus {
+    enum ConnectionStatus: Equatable {
         case disconnected
         case connecting
         case connected

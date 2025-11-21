@@ -276,7 +276,7 @@ class TodayViewModel: ObservableObject {
 
     // Check if a workout is likely ongoing based on recent activity
     var isWorkoutOngoing: Bool {
-        guard let summary = todaySummary else { return false }
+        guard todaySummary != nil else { return false }
         guard let lastChange = lastStepsChangeTime else { return false }
 
         // If steps increased within the last 60 seconds, workout is ongoing
