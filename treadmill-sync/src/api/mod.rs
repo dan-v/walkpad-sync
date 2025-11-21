@@ -1,16 +1,18 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    response::IntoResponse,
-    routing::{get, post},
+    response::{Html, IntoResponse},
+    routing::get,
     Json, Router,
 };
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
-use crate::storage::{DailySummary, HealthSync, Storage, TreadmillSample};
+use crate::storage::{DailySummary, Storage, TreadmillSample};
+use crate::websocket::WsMessage;
 
 // Validation constants
 const MAX_DATE_RANGE_DAYS: i64 = 365;
@@ -18,19 +20,29 @@ const MAX_DATE_RANGE_DAYS: i64 = 365;
 #[derive(Clone)]
 pub struct AppState {
     pub storage: Arc<Storage>,
+    pub ws_tx: broadcast::Sender<WsMessage>,
 }
 
 pub fn create_router(state: AppState) -> Router {
     Router::new()
+        .route("/", get(serve_dashboard))
+        .route("/dashboard", get(serve_dashboard))
         .route("/api/health", get(health_check))
         .route("/api/dates", get(get_activity_dates))
         .route("/api/dates/:date/summary", get(get_date_summary))
         .route("/api/dates/:date/samples", get(get_date_samples))
-        .route("/api/dates/:date/sync", post(mark_date_synced))
-        .route("/api/dates/synced", get(get_synced_dates))
         .route("/api/samples", get(get_samples_by_range))
         .route("/api/stats", get(get_stats))
+        // Alias routes for dashboard compatibility
+        .route("/api/activity/dates", get(get_activity_dates))
+        .route("/api/activity/summary/:date", get(get_date_summary))
+        .route("/ws/live", get(crate::websocket::ws_handler))
         .with_state(state)
+}
+
+// Serve embedded dashboard
+async fn serve_dashboard() -> Html<&'static str> {
+    Html(include_str!("../../static/dashboard.html"))
 }
 
 // Health check endpoint
@@ -47,12 +59,20 @@ struct ActivityDatesResponse {
     dates: Vec<String>,  // YYYY-MM-DD format
 }
 
+#[derive(Debug, Deserialize)]
+struct TimezoneQuery {
+    #[serde(default)]
+    tz_offset: Option<i32>,  // Timezone offset in seconds (e.g., -28800 for PST/UTC-8)
+}
+
 async fn get_activity_dates(
     State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<ActivityDatesResponse>, ApiError> {
-    info!("Getting all activity dates");
+    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    info!("Getting all activity dates (tz_offset={})", tz_offset);
 
-    let dates = state.storage.get_activity_dates().await?;
+    let dates = state.storage.get_activity_dates(tz_offset).await?;
 
     Ok(Json(ActivityDatesResponse { dates }))
 }
@@ -61,11 +81,13 @@ async fn get_activity_dates(
 async fn get_date_summary(
     State(state): State<AppState>,
     axum::extract::Path(date_str): axum::extract::Path<String>,
+    Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<DailySummary>, ApiError> {
     let date = validate_date(&date_str)?;
-    info!("Getting summary for date: {}", date_str);
+    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    info!("Getting summary for date: {} (tz_offset={})", date_str, tz_offset);
 
-    let summary = state.storage.get_daily_summary(date).await?;
+    let summary = state.storage.get_daily_summary(date, tz_offset).await?;
 
     match summary {
         Some(s) => Ok(Json(s)),
@@ -84,9 +106,12 @@ struct SamplesResponse {
 struct SampleResponse {
     timestamp: i64,           // Unix epoch
     speed: Option<f64>,       // m/s
-    distance_total: Option<i64>,
-    calories_total: Option<i64>,
-    steps_total: Option<i64>,
+    distance_total: Option<i64>,  // Cumulative (for debugging)
+    calories_total: Option<i64>,  // Cumulative (for debugging)
+    steps_total: Option<i64>,     // Cumulative (for debugging)
+    distance_delta: Option<i64>,  // Delta since last sample (USE THIS!)
+    calories_delta: Option<i64>,  // Delta since last sample (USE THIS!)
+    steps_delta: Option<i64>,     // Delta since last sample (USE THIS!)
 }
 
 impl From<TreadmillSample> for SampleResponse {
@@ -97,18 +122,23 @@ impl From<TreadmillSample> for SampleResponse {
             distance_total: s.distance_total,
             calories_total: s.calories_total,
             steps_total: s.steps_total,
+            distance_delta: s.distance_delta,
+            calories_delta: s.calories_delta,
+            steps_delta: s.steps_delta,
         }
     }
 }
 
 async fn get_date_samples(
     State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
     axum::extract::Path(date_str): axum::extract::Path<String>,
 ) -> Result<Json<SamplesResponse>, ApiError> {
     let date = validate_date(&date_str)?;
-    info!("Getting samples for date: {}", date_str);
+    let tz_offset = query.tz_offset.unwrap_or(0);
+    info!("Getting samples for date: {} with tz_offset: {}", date_str, tz_offset);
 
-    let samples = state.storage.get_samples_for_date(date).await?;
+    let samples = state.storage.get_samples_for_date(date, tz_offset).await?;
 
     if samples.is_empty() {
         return Err(ApiError::NotFound(format!("No samples found for date: {}", date_str)));
@@ -163,50 +193,6 @@ async fn get_samples_by_range(
         date: format!("{} to {}", query.start_date, query.end_date),
         samples,
     }))
-}
-
-// Mark a date as synced to Apple Health
-#[derive(Debug, Serialize)]
-struct SyncResponse {
-    status: String,
-    date: String,
-}
-
-async fn mark_date_synced(
-    State(state): State<AppState>,
-    axum::extract::Path(date_str): axum::extract::Path<String>,
-) -> Result<Json<SyncResponse>, ApiError> {
-    let date = validate_date(&date_str)?;
-    info!("Marking date as synced: {}", date_str);
-
-    // Verify the date has data before marking as synced
-    let summary = state.storage.get_daily_summary(date).await?;
-    if summary.is_none() {
-        return Err(ApiError::NotFound(format!("No activity found for date: {}", date_str)));
-    }
-
-    state.storage.mark_date_synced(&date_str).await?;
-
-    Ok(Json(SyncResponse {
-        status: "ok".to_string(),
-        date: date_str,
-    }))
-}
-
-// Get all synced dates
-#[derive(Debug, Serialize)]
-struct SyncedDatesResponse {
-    synced_dates: Vec<HealthSync>,
-}
-
-async fn get_synced_dates(
-    State(state): State<AppState>,
-) -> Result<Json<SyncedDatesResponse>, ApiError> {
-    info!("Getting all synced dates");
-
-    let synced_dates = state.storage.get_synced_dates().await?;
-
-    Ok(Json(SyncedDatesResponse { synced_dates }))
 }
 
 // Get general stats

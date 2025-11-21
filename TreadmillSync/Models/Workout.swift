@@ -26,7 +26,16 @@ private enum DateFormatters {
     static let yearMonthDay: DateFormatter = {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC") // Server uses UTC dates
+        // Use local timezone for display purposes
+        formatter.timeZone = TimeZone.current
+        return formatter
+    }()
+
+    // For server communication - server uses UTC for date grouping
+    static let yearMonthDayUTC: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter
     }()
 }
@@ -46,8 +55,6 @@ struct DailySummary: Codable, Identifiable {
     let steps: Int64
     let avgSpeed: Double // m/s
     let maxSpeed: Double
-    let isSynced: Bool
-    let syncedAt: Int64? // Unix timestamp when synced (nil if not synced)
 
     var id: String { date }
 
@@ -60,12 +67,17 @@ struct DailySummary: Codable, Identifiable {
         case steps
         case avgSpeed = "avg_speed"
         case maxSpeed = "max_speed"
-        case isSynced = "is_synced"
-        case syncedAt = "synced_at"
+    }
+
+    // Sync state (now tracked locally, not from server)
+    var isSynced: Bool {
+        SyncStateManager.shared.isSynced(date)
     }
 
     // Computed properties for display
     var dateDisplay: Date? {
+        // Server now returns dates in user's local timezone
+        // Parse as local date for display
         DateFormatters.yearMonthDay.date(from: date)
     }
 
@@ -105,32 +117,23 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var syncedAtFormatted: String? {
-        guard let syncedAt = syncedAt else { return nil }
-        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .full
-        return "Synced " + formatter.localizedString(for: date, relativeTo: Date())
+        SyncStateManager.shared.getSyncedAtFormatted(for: date)
     }
 
     var syncedAtShort: String? {
-        guard let syncedAt = syncedAt else { return nil }
-        let date = Date(timeIntervalSince1970: TimeInterval(syncedAt))
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        SyncStateManager.shared.getSyncedAtShort(for: date)
     }
 
     var dayOfWeek: String {
         guard let dateObj = dateDisplay else { return "" }
         let formatter = DateFormatter()
         formatter.dateFormat = "EEE"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        formatter.timeZone = TimeZone.current
         return formatter.string(from: dateObj)
     }
 
     var isToday: Bool {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        // Server returns dates in user's local timezone
         let todayStr = DateFormatters.yearMonthDay.string(from: Date())
         return date == todayStr
     }
@@ -144,9 +147,12 @@ struct SamplesResponse: Codable {
 struct TreadmillSample: Codable, Identifiable {
     let timestamp: Int64 // Unix epoch
     let speed: Double?
-    let distanceTotal: Int64?
-    let caloriesTotal: Int64?
-    let stepsTotal: Int64?
+    let distanceTotal: Int64?  // Cumulative (for debugging)
+    let caloriesTotal: Int64?  // Cumulative (for debugging)
+    let stepsTotal: Int64?     // Cumulative (for debugging)
+    let distanceDelta: Int64?  // Delta since last sample (USE THIS!)
+    let caloriesDelta: Int64?  // Delta since last sample (USE THIS!)
+    let stepsDelta: Int64?     // Delta since last sample (USE THIS!)
 
     var id: Int64 { timestamp }
 
@@ -156,6 +162,9 @@ struct TreadmillSample: Codable, Identifiable {
         case distanceTotal = "distance_total"
         case caloriesTotal = "calories_total"
         case stepsTotal = "steps_total"
+        case distanceDelta = "distance_delta"
+        case caloriesDelta = "calories_delta"
+        case stepsDelta = "steps_delta"
     }
 
     var date: Date {
@@ -163,20 +172,3 @@ struct TreadmillSample: Codable, Identifiable {
     }
 }
 
-struct SyncedDatesResponse: Codable {
-    let syncedDates: [HealthSync]
-
-    enum CodingKeys: String, CodingKey {
-        case syncedDates = "synced_dates"
-    }
-}
-
-struct HealthSync: Codable {
-    let syncDate: String // YYYY-MM-DD
-    let syncedAt: Int64 // Unix timestamp
-
-    enum CodingKeys: String, CodingKey {
-        case syncDate = "sync_date"
-        case syncedAt = "synced_at"
-    }
-}

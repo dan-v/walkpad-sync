@@ -1,7 +1,9 @@
 import SwiftUI
+import Combine
 
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
+    @State private var autoRefreshTask: Task<Void, Never>?
 
     var body: some View {
         NavigationStack {
@@ -11,6 +13,45 @@ struct TodayView: View {
                         ProgressView("Loading...")
                             .padding()
                     } else if let todaySummary = viewModel.todaySummary {
+                        // Connection status indicator
+                        if viewModel.isWebSocketConnected {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.green)
+                                    .frame(width: 8, height: 8)
+                                Text("Live")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.green)
+                                Image(systemName: "antenna.radiowaves.left.and.right")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.green.opacity(0.1))
+                            .cornerRadius(8)
+                        } else if viewModel.isWorkoutOngoing {
+                            HStack(spacing: 6) {
+                                Circle()
+                                    .fill(Color.orange)
+                                    .frame(width: 8, height: 8)
+                                Text("Active workout")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                Image(systemName: "bolt.fill")
+                                    .font(.caption2)
+                                    .foregroundColor(.orange)
+                                Text("Polling every 3s")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
                         // Date header
                         Text("TODAY")
                             .font(.caption)
@@ -72,18 +113,6 @@ struct TodayView: View {
                         }
                         .padding(.horizontal)
 
-                        // Recent trend
-                        if viewModel.last7Days.count > 1 {
-                            VStack(alignment: .leading, spacing: 12) {
-                                Text("Last 7 Days")
-                                    .font(.headline)
-                                    .padding(.horizontal)
-
-                                recentTrendBars
-                            }
-                            .padding(.top, 8)
-                        }
-
                     } else {
                         // No activity today
                         ContentUnavailableView {
@@ -101,42 +130,49 @@ struct TodayView: View {
             }
         }
         .task {
+            // Connect to WebSocket for live updates
+            await viewModel.connectWebSocket()
+
+            // Load initial data
             await viewModel.loadData()
-        }
-    }
 
-    private var recentTrendBars: some View {
-        let maxSteps = viewModel.last7Days.map { $0.steps }.max() ?? 1
-
-        return VStack(spacing: 8) {
-            HStack(alignment: .bottom, spacing: 8) {
-                ForEach(viewModel.last7Days) { summary in
-                    VStack(spacing: 4) {
-                        // Bar
-                        let height = maxSteps > 0 ? CGFloat(summary.steps) / CGFloat(maxSteps) * 80 : 0
-                        RoundedRectangle(cornerRadius: 4)
-                            .fill(summary.isToday ? Color.blue : Color.blue.opacity(0.5))
-                            .frame(height: max(height, 4))
-
-                        // Day label
-                        Text(summary.dayOfWeek)
-                            .font(.caption2)
-                            .foregroundColor(summary.isToday ? .blue : .secondary)
+            // Fallback polling when WebSocket is disconnected
+            // This also serves as periodic full refresh
+            autoRefreshTask = Task {
+                while !Task.isCancelled {
+                    // If WebSocket connected, do slower background refresh
+                    // Otherwise, use fast refresh during workout
+                    let refreshInterval: Double
+                    if viewModel.isWebSocketConnected {
+                        refreshInterval = 60.0  // Slow refresh when WebSocket is active
+                    } else {
+                        refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
                     }
-                    .frame(maxWidth: .infinity)
+
+                    try? await Task.sleep(for: .seconds(refreshInterval))
+
+                    if !Task.isCancelled {
+                        // Don't show loading indicator during background refresh
+                        await viewModel.loadData(showLoading: false)
+                    }
                 }
             }
-            .frame(height: 100)
-            .padding(.horizontal)
+        }
+        .onAppear {
+            // Keep screen awake while on Today page
+            UIApplication.shared.isIdleTimerDisabled = true
+        }
+        .onDisappear {
+            // Re-enable auto-lock when leaving Today page
+            UIApplication.shared.isIdleTimerDisabled = false
 
-            // Legend
-            HStack {
-                Text("Daily average: \(viewModel.dailyAverageFormatted)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Spacer()
+            // Cancel auto-refresh when view disappears
+            autoRefreshTask?.cancel()
+
+            // Disconnect WebSocket
+            Task {
+                await viewModel.disconnectWebSocket()
             }
-            .padding(.horizontal)
         }
     }
 }
@@ -196,21 +232,63 @@ class TodayViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var isSyncing = false
     @Published var error: String?
+    @Published var lastFetchTime: Date?
+    @Published var previousSteps: Int64 = 0
+    @Published var lastStepsChangeTime: Date?
+    @Published var isWebSocketConnected = false
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
+    private let webSocketManager: WebSocketManager
+    private var cancellables = Set<AnyCancellable>()
 
     init() {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
+        self.webSocketManager = WebSocketManager(config: config)
+
+        // Subscribe to WebSocket connection status
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            // Subscribe to connection status changes
+            for await status in await self.webSocketManager.connectionStatusPublisher.values {
+                await MainActor.run {
+                    self.isWebSocketConnected = (status == .connected)
+                    print("🔌 WebSocket status: \(status)")
+                }
+            }
+        }
+
+        // Subscribe to WebSocket sample updates
+        Task { @MainActor [weak self] in
+            guard let self = self else { return }
+
+            for await sample in await self.webSocketManager.samplePublisher.values {
+                await MainActor.run {
+                    print("📨 New sample received via WebSocket: steps=\(sample.stepsDelta ?? 0)")
+                }
+                // Refresh data when new sample arrives
+                await self.loadData(showLoading: false)
+            }
+        }
+    }
+
+    // Check if a workout is likely ongoing based on recent activity
+    var isWorkoutOngoing: Bool {
+        guard todaySummary != nil else { return false }
+        guard let lastChange = lastStepsChangeTime else { return false }
+
+        // If steps increased within the last 60 seconds, workout is ongoing
+        let timeSinceLastChange = Date().timeIntervalSince(lastChange)
+        return timeSinceLastChange < 60
     }
 
     var currentStreak: Int {
         guard !allSummaries.isEmpty else { return 0 }
 
         let sorted = allSummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -221,7 +299,10 @@ class TodayViewModel: ObservableObject {
 
             if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
                 streak += 1
-                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
+                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
+                    break
+                }
+                expectedDate = previousDate
             } else {
                 break
             }
@@ -231,8 +312,7 @@ class TodayViewModel: ObservableObject {
     }
 
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -240,7 +320,6 @@ class TodayViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = allSummaries
@@ -262,31 +341,16 @@ class TodayViewModel: ObservableObject {
         allSummaries.filter { !$0.isSynced }.sorted { $0.date < $1.date }
     }
 
-    var last7Days: [DailySummary] {
-        Array(allSummaries.suffix(7))
-    }
-
-    var dailyAverageFormatted: String {
-        guard !last7Days.isEmpty else { return "0" }
-        let totalSteps = last7Days.reduce(0) { $0 + $1.steps }
-        let average = totalSteps / Int64(last7Days.count)
-
-        if average >= 1000 {
-            let k = Double(average) / 1000.0
-            return String(format: "%.1fk", k)
+    func loadData(showLoading: Bool = true) async {
+        if showLoading {
+            isLoading = true
         }
-        return "\(average)"
-    }
-
-    func loadData() async {
-        isLoading = true
         error = nil
 
         do {
-            // Get today's date
+            // Get today's date in local timezone
             let formatter = DateFormatter()
             formatter.dateFormat = "yyyy-MM-dd"
-            formatter.timeZone = TimeZone(identifier: "UTC")
             let todayStr = formatter.string(from: Date())
 
             // Fetch all dates to get full summaries for streak/week calculation
@@ -301,14 +365,28 @@ class TodayViewModel: ObservableObject {
 
             allSummaries = loadedSummaries
 
-            // Find today's summary
-            todaySummary = loadedSummaries.first(where: { $0.date == todayStr })
+            // Find today's summary and detect if steps increased (workout ongoing)
+            let newSummary = loadedSummaries.first(where: { $0.date == todayStr })
+            let newSteps = newSummary?.steps ?? 0
+
+            // If steps increased since last fetch, update last change time
+            if newSteps > previousSteps {
+                lastStepsChangeTime = Date()
+            }
+
+            previousSteps = newSteps
+            todaySummary = newSummary
+
+            // Track fetch time for workout detection
+            lastFetchTime = Date()
 
         } catch {
             self.error = error.localizedDescription
         }
 
-        isLoading = false
+        if showLoading {
+            isLoading = false
+        }
     }
 
     func syncAll() async {
@@ -330,8 +408,8 @@ class TodayViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
             }
 
             // Reload to update sync status
@@ -342,5 +420,15 @@ class TodayViewModel: ObservableObject {
         }
 
         isSyncing = false
+    }
+
+    // MARK: - WebSocket Management
+
+    func connectWebSocket() async {
+        await webSocketManager.connect()
+    }
+
+    func disconnectWebSocket() async {
+        await webSocketManager.disconnect()
     }
 }

@@ -327,9 +327,8 @@ struct MonthCalendarView: View {
 
     private let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
     private var calendar: Calendar {
-        var cal = Calendar.current
-        cal.timeZone = TimeZone(identifier: "UTC")!
-        return cal
+        // Server now returns dates in user's local timezone
+        return Calendar.current
     }
 
     private var weeks: [[Date?]] {
@@ -377,7 +376,8 @@ struct MonthCalendarView: View {
     private func stepsForDate(_ date: Date) -> Int64? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        // Server now returns local dates, so use local timezone
+        formatter.timeZone = TimeZone.current
         let dateString = formatter.string(from: date)
 
         return summaries.first(where: { $0.date == dateString })?.steps
@@ -386,7 +386,8 @@ struct MonthCalendarView: View {
     private func summaryForDate(_ date: Date) -> DailySummary? {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
+        // Server now returns local dates, so use local timezone
+        formatter.timeZone = TimeZone.current
         let dateString = formatter.string(from: date)
 
         return summaries.first(where: { $0.date == dateString })
@@ -464,15 +465,25 @@ struct MonthCalendarView: View {
                                         }
                                     }
 
-                                    // Unsynced indicator
-                                    if let summary = daySummary, !summary.isSynced {
+                                    // Sync status indicator
+                                    if let summary = daySummary {
                                         VStack {
                                             HStack {
                                                 Spacer()
-                                                Circle()
-                                                    .fill(Color.blue)
-                                                    .frame(width: 6, height: 6)
-                                                    .padding(4)
+                                                if !summary.isSynced {
+                                                    // Never synced - blue dot
+                                                    Circle()
+                                                        .fill(Color.blue)
+                                                        .frame(width: 6, height: 6)
+                                                        .padding(4)
+                                                } else if SyncStateManager.shared.shouldResync(summary: summary) {
+                                                    // Synced but has new data - orange dot
+                                                    Circle()
+                                                        .fill(Color.orange)
+                                                        .frame(width: 6, height: 6)
+                                                        .padding(4)
+                                                }
+                                                // No indicator if synced and up to date
                                             }
                                             Spacer()
                                         }
@@ -518,19 +529,16 @@ class HistoryViewModel: ObservableObject {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
 
-        // Initialize to current month in UTC
+        // Initialize to current month in local timezone
         let calendar = Calendar.current
-        var utcCalendar = calendar
-        utcCalendar.timeZone = TimeZone(identifier: "UTC")!
         let now = Date()
-        self.selectedYear = utcCalendar.component(.year, from: now)
-        self.selectedMonth = utcCalendar.component(.month, from: now)
+        self.selectedYear = calendar.component(.year, from: now)
+        self.selectedMonth = calendar.component(.month, from: now)
     }
 
     var currentMonthTitle: String {
         let dateComponents = DateComponents(year: selectedYear, month: selectedMonth)
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         guard let date = calendar.date(from: dateComponents) else {
             return ""
@@ -538,13 +546,11 @@ class HistoryViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "MMMM yyyy"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: date)
     }
 
     var isCurrentMonth: Bool {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         let currentYear = calendar.component(.year, from: now)
         let currentMonth = calendar.component(.month, from: now)
@@ -557,8 +563,7 @@ class HistoryViewModel: ObservableObject {
         guard !dailySummaries.isEmpty else { return 0 }
 
         let sorted = dailySummaries.sorted { $0.date > $1.date }
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
 
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
@@ -569,7 +574,10 @@ class HistoryViewModel: ObservableObject {
 
             if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
                 streak += 1
-                expectedDate = calendar.date(byAdding: .day, value: -1, to: expectedDate)!
+                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
+                    break
+                }
+                expectedDate = previousDate
             } else {
                 break
             }
@@ -580,8 +588,7 @@ class HistoryViewModel: ObservableObject {
 
     // This week stats
     var weekStepsFormatted: String {
-        var calendar = Calendar.current
-        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let calendar = Calendar.current
         let now = Date()
         guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
             return "0"
@@ -589,7 +596,6 @@ class HistoryViewModel: ObservableObject {
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
-        formatter.timeZone = TimeZone(identifier: "UTC")
         let weekStartStr = formatter.string(from: weekStart)
 
         let weekSteps = dailySummaries
@@ -604,8 +610,7 @@ class HistoryViewModel: ObservableObject {
         let monthSteps = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -619,8 +624,7 @@ class HistoryViewModel: ObservableObject {
         let monthDistance = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -628,15 +632,14 @@ class HistoryViewModel: ObservableObject {
             .reduce(0) { $0 + $1.distanceMeters }
 
         let miles = Double(monthDistance) / 1609.34
-        return String(format: "%.1f", miles)
+        return String(format: "%.2f", miles)
     }
 
     var monthCaloriesFormatted: String {
         let monthCalories = dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -654,8 +657,7 @@ class HistoryViewModel: ObservableObject {
         dailySummaries
             .filter {
                 guard let date = $0.dateDisplay else { return false }
-                var calendar = Calendar.current
-                calendar.timeZone = TimeZone(identifier: "UTC")!
+                let calendar = Calendar.current
                 let summaryYear = calendar.component(.year, from: date)
                 let summaryMonth = calendar.component(.month, from: date)
                 return summaryYear == selectedYear && summaryMonth == selectedMonth
@@ -664,7 +666,7 @@ class HistoryViewModel: ObservableObject {
     }
 
     var unsyncedCount: Int {
-        dailySummaries.filter { !$0.isSynced }.count
+        dailySummaries.filter { !$0.isSynced || SyncStateManager.shared.shouldResync(summary: $0) }.count
     }
 
     // Best day stats
@@ -707,33 +709,52 @@ class HistoryViewModel: ObservableObject {
     }
 
     func loadData() async {
+        // Prevent concurrent execution with sync operation
+        guard !isSyncing else {
+            print("⚠️ Skipping loadData - sync in progress")
+            return
+        }
+
         isLoading = true
 
         do {
             let dates = try await apiClient.fetchActivityDates()
+            print("📅 Fetched \(dates.count) activity dates: \(dates)")
 
             var loadedSummaries: [DailySummary] = []
             for date in dates {
-                if let summary = try? await apiClient.fetchDailySummary(date: date) {
+                do {
+                    let summary = try await apiClient.fetchDailySummary(date: date)
                     loadedSummaries.append(summary)
+                    print("✅ Loaded summary for \(date): \(summary.steps) steps")
+                } catch {
+                    print("❌ Failed to load summary for \(date): \(error)")
                 }
             }
 
             dailySummaries = loadedSummaries.sorted { $0.date < $1.date }
+            print("📊 Total summaries loaded: \(dailySummaries.count)")
         } catch {
-            print("Error loading stats: \(error)")
+            print("❌ Error loading stats: \(error)")
         }
 
         isLoading = false
     }
 
     func syncAll() async {
+        // Prevent concurrent execution with load operation
+        guard !isLoading else {
+            print("⚠️ Skipping syncAll - load in progress")
+            return
+        }
+
         isSyncing = true
         syncError = nil
 
-        let unsyncedSummaries = dailySummaries.filter { !$0.isSynced }
+        // Sync unsynced days AND days that need re-sync (have new data)
+        let summariesToSync = dailySummaries.filter { !$0.isSynced || SyncStateManager.shared.shouldResync(summary: $0) }
 
-        for summary in unsyncedSummaries {
+        for summary in summariesToSync {
             do {
                 // Fetch samples for this date
                 let samples = try await apiClient.fetchSamples(date: summary.date)
@@ -747,16 +768,16 @@ class HistoryViewModel: ObservableObject {
                     steps: summary.steps
                 )
 
-                // Mark as synced
-                try await apiClient.markDateSynced(date: summary.date)
-
-                // Reload to get updated sync status
-                await loadData()
+                // Mark as synced locally
+                SyncStateManager.shared.markAsSynced(summary: summary)
             } catch {
                 syncError = "Failed to sync \(summary.dateFormatted): \(error.localizedDescription)"
                 break
             }
         }
+
+        // Reload data once after all syncs complete to refresh UI
+        await loadData()
 
         isSyncing = false
     }
