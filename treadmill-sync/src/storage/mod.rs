@@ -32,15 +32,6 @@ pub struct DailySummary {
     pub steps: i64,
     pub avg_speed: f64,          // m/s
     pub max_speed: f64,
-    pub is_synced: bool,
-    pub synced_at: Option<i64>,  // Unix timestamp when synced (None if not synced)
-}
-
-/// Health sync record
-#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
-pub struct HealthSync {
-    pub sync_date: String,       // YYYY-MM-DD
-    pub synced_at: i64,          // Unix timestamp
 }
 
 pub struct Storage {
@@ -212,10 +203,6 @@ impl Storage {
         // Since we're only querying samples where speed > 0, this represents actual active time
         let duration_seconds = last_timestamp - first_timestamp;
 
-        // Check if this date has been synced and get timestamp
-        let synced_at = self.get_sync_timestamp(&date_str).await?;
-        let is_synced = synced_at.is_some();
-
         Ok(Some(DailySummary {
             date: date_str,
             total_samples,
@@ -225,8 +212,6 @@ impl Storage {
             steps,
             avg_speed,
             max_speed,
-            is_synced,
-            synced_at,
         }))
     }
 
@@ -251,52 +236,6 @@ impl Storage {
 
         let dates = rows.iter().map(|row| row.get::<String, _>("date")).collect();
         Ok(dates)
-    }
-
-    /// Mark a date as synced to Apple Health
-    pub async fn mark_date_synced(&self, date: &str) -> Result<()> {
-        let synced_at = Utc::now().timestamp();
-
-        sqlx::query(
-            "INSERT OR REPLACE INTO health_syncs (sync_date, synced_at) VALUES (?, ?)"
-        )
-        .bind(date)
-        .bind(synced_at)
-        .execute(&self.pool)
-        .await?;
-
-        Ok(())
-    }
-
-    /// Check if a date has been synced to Apple Health
-    pub async fn is_date_synced(&self, date: &str) -> Result<bool> {
-        let row = sqlx::query("SELECT sync_date FROM health_syncs WHERE sync_date = ?")
-            .bind(date)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(row.is_some())
-    }
-
-    /// Get sync info for a date (returns timestamp if synced)
-    pub async fn get_sync_timestamp(&self, date: &str) -> Result<Option<i64>> {
-        let row = sqlx::query("SELECT synced_at FROM health_syncs WHERE sync_date = ?")
-            .bind(date)
-            .fetch_optional(&self.pool)
-            .await?;
-
-        Ok(row.map(|r| r.get("synced_at")))
-    }
-
-    /// Get all synced dates
-    pub async fn get_synced_dates(&self) -> Result<Vec<HealthSync>> {
-        let syncs = sqlx::query_as::<_, HealthSync>(
-            "SELECT sync_date, synced_at FROM health_syncs ORDER BY sync_date DESC"
-        )
-        .fetch_all(&self.pool)
-        .await?;
-
-        Ok(syncs)
     }
 
     /// Get the latest sample (for debugging/status)
