@@ -42,7 +42,7 @@ pub fn create_router(state: AppState) -> Router {
 
 // Serve embedded dashboard
 async fn serve_dashboard() -> Html<&'static str> {
-    Html(include_str!("../static/dashboard.html"))
+    Html(include_str!("../../static/dashboard.html"))
 }
 
 // Health check endpoint
