@@ -820,7 +820,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "Treadmill Activity Dashboard",
-  "uid": "treadmill-activity",
-  "version": 0,
+  "uid": "treadmill-activity-v2",
+  "version": 1,
   "weekStart": ""
 }
