@@ -208,10 +208,9 @@ impl Storage {
         let first_timestamp: i64 = summary.get("first_timestamp");
         let last_timestamp: i64 = summary.get("last_timestamp");
 
-        // Calculate duration based on number of active samples (speed > 0)
-        // Each sample represents ~1 second of activity, which is more accurate than
-        // using timestamp difference (which would count idle time if treadmill is left on)
-        let duration_seconds = total_samples;
+        // Calculate duration as actual time elapsed (last_timestamp - first_timestamp)
+        // Since we're only querying samples where speed > 0, this represents actual active time
+        let duration_seconds = last_timestamp - first_timestamp;
 
         // Check if this date has been synced and get timestamp
         let synced_at = self.get_sync_timestamp(&date_str).await?;
