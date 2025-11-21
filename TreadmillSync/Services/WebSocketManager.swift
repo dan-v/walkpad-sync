@@ -3,7 +3,7 @@ import Combine
 
 /// Manages WebSocket connection for real-time treadmill sample updates
 actor WebSocketManager {
-    private let config: APIConfig
+    private let config: ServerConfig
     private var webSocketTask: URLSessionWebSocketTask?
     private var isConnected = false
     private var shouldReconnect = true
@@ -27,7 +27,7 @@ actor WebSocketManager {
         case error(String)
     }
 
-    init(config: APIConfig = .default) {
+    init(config: ServerConfig = .default) {
         self.config = config
     }
 
