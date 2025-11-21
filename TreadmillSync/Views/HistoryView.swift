@@ -749,14 +749,14 @@ class HistoryViewModel: ObservableObject {
 
                 // Mark as synced locally
                 SyncStateManager.shared.markAsSynced(summary: summary)
-
-                // Reload to get updated sync status
-                await loadData()
             } catch {
                 syncError = "Failed to sync \(summary.dateFormatted): \(error.localizedDescription)"
                 break
             }
         }
+
+        // Reload data once after all syncs complete to refresh UI
+        await loadData()
 
         isSyncing = false
     }
