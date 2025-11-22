@@ -27,7 +27,7 @@ pub enum ConnectionStatus {
     Scanning,
     Connecting,
     Connected,
-    Error(String),
+    Error,
 }
 
 pub struct BluetoothManager {
@@ -76,7 +76,7 @@ impl BluetoothManager {
                 Err(e) => {
                     reconnect_attempts += 1;
                     error!("Connection error (attempt #{}): {}", reconnect_attempts, e);
-                    let _ = self.status_tx.send(ConnectionStatus::Error(e.to_string()));
+                    let _ = self.status_tx.send(ConnectionStatus::Error);
                 }
             }
 
@@ -408,13 +408,6 @@ impl BluetoothManager {
                 return Err(anyhow!("Connection lost"));
             }
         }
-
-        // Cancel polling task if it exists (unlikely to reach here but good for cleanup)
-        if let Some(task) = poll_task.take() {
-            task.abort();
-        }
-
-        Ok(())
     }
 
     async fn record_sample(&self, data: &TreadmillData) -> Result<()> {
