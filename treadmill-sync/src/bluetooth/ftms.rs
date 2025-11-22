@@ -2,23 +2,11 @@ use anyhow::{anyhow, Result};
 use tracing::{debug, warn};
 use uuid::Uuid;
 
-// FTMS Service and Characteristic UUIDs (Standard Protocol)
-#[allow(dead_code)]
-pub const FTMS_SERVICE_UUID: Uuid = Uuid::from_u128(0x00001826_0000_1000_8000_00805F9B34FB);
+// FTMS Standard Protocol - Treadmill Data Characteristic
 pub const TREADMILL_DATA_UUID: Uuid = Uuid::from_u128(0x00002ACD_0000_1000_8000_00805F9B34FB);
-#[allow(dead_code)]
-pub const INDOOR_BIKE_DATA_UUID: Uuid = Uuid::from_u128(0x00002AD2_0000_1000_8000_00805F9B34FB);
-#[allow(dead_code)]
-pub const FITNESS_MACHINE_CONTROL_POINT_UUID: Uuid = Uuid::from_u128(0x00002AD9_0000_1000_8000_00805F9B34FB);
-#[allow(dead_code)]
-pub const FITNESS_MACHINE_STATUS_UUID: Uuid = Uuid::from_u128(0x00002ADA_0000_1000_8000_00805F9B34FB);
 
-// LifeSpan Proprietary Protocol UUIDs
-#[allow(dead_code)]
-pub const LIFESPAN_SERVICE_UUID: Uuid = Uuid::from_u128(0x0000FFF0_0000_1000_8000_00805F9B34FB);
+// LifeSpan Proprietary Protocol
 pub const LIFESPAN_DATA_UUID: Uuid = Uuid::from_u128(0x0000FFF1_0000_1000_8000_00805F9B34FB);
-#[allow(dead_code)]
-pub const LIFESPAN_CONTROL_UUID: Uuid = Uuid::from_u128(0x0000FFF2_0000_1000_8000_00805F9B34FB);
 
 // LifeSpan Proprietary Protocol Commands
 pub const LIFESPAN_HANDSHAKE: [[u8; 5]; 4] = [

@@ -21,9 +21,9 @@
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.healthcare-fitness</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>TreadmillSync syncs your treadmill workout data to Apple Health.</string>
+	<string>WalkPad Sync reads your health data to prevent duplicate workout entries.</string>
 	<key>NSHealthUpdateUsageDescription</key>
-	<string>TreadmillSync saves your treadmill workout data (duration, distance, speed, incline, calories, and heart rate if available) to Apple Health.</string>
+	<string>WalkPad Sync saves your walking pad workout data (steps, distance, duration, and calories) to Apple Health.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -50,7 +50,7 @@
 	</array>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
-		<string>com.treadmillsync.refresh</string>
+		<string>dev.lsof.walkpadsync.refresh</string>
 	</array>
 	<key>UILaunchScreen</key>
 	<dict>

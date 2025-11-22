@@ -1,88 +1,57 @@
-# Treadmill Sync
+# WalkPad Sync
 
-Captures raw data from your treadmill via Bluetooth and visualizes it in Grafana.
+Sync your LifeSpan walking pad data to Apple Health.
 
-## Quick Start
+## What It Does
+
+- **Rust server** runs on a Raspberry Pi (or any Linux machine) near your treadmill
+- **Captures data** via Bluetooth from your LifeSpan treadmill (TR1200-DT3 tested)
+- **iOS app** syncs daily summaries to Apple Health (steps, distance, calories, duration)
+
+## Requirements
+
+- LifeSpan treadmill with Bluetooth (TR1200-DT3 or similar)
+- Raspberry Pi or Linux machine with Bluetooth
+- iPhone with iOS 17+
+- Apple Developer account (for App Store or TestFlight distribution)
+
+## Server Setup
 
 ```bash
-docker-compose up
+cd treadmill-sync
+
+# Copy and edit config
+cp config.example.toml config.toml
+
+# Run with Docker
+docker build -t walkpadsync .
+docker run -d --net=host --privileged -v $(pwd)/config.toml:/app/config.toml walkpadsync
+
+# Or run directly (requires Rust and libdbus-1-dev)
+cargo run --release
 ```
 
-That's it! Open http://localhost:3000 to see your Grafana dashboard (admin/admin).
+The server exposes a REST API on port 8080.
 
-## What You Get
+## iOS App
 
-- **Rust server** capturing BLE treadmill data → SQLite
-- **Grafana** with pre-configured dashboards showing:
-  - Steps per day
-  - Distance per day
-  - Calories per day
-  - Active time per day
+Open `TreadmillSync.xcodeproj` in Xcode, update the bundle identifier and team, then build and run.
+
+Configure the server address in the app settings.
 
 ## API
 
-The Rust server exposes a REST API on port 8080:
-
 ```bash
-# Get all dates with activity
+# Get dates with activity
 curl http://localhost:8080/api/dates
 
 # Get summary for a date
-curl http://localhost:8080/api/dates/2025-03-21/summary
+curl http://localhost:8080/api/dates/2025-01-15/summary
 
-# Get raw samples for a date
-curl http://localhost:8080/api/dates/2025-03-21/samples
-
-# Mark date as synced to Apple Health
-curl -X POST http://localhost:8080/api/dates/2025-03-21/sync
+# Mark as synced
+curl -X POST http://localhost:8080/api/dates/2025-01-15/sync
 ```
 
-## Configuration
+## License
 
-Edit `treadmill-sync/config.toml` to change your treadmill's name:
-
-```toml
-[bluetooth]
-device_name_filter = "LifeSpan"  # Change to your treadmill's name
-```
-
-## Data
-
-All data is stored in `./data/treadmill.db` (SQLite). Grafana reads from this same database.
-
-## iOS App (TODO)
-
-The iOS app needs to be updated to use the new date-based API. Currently it still uses the old workout-based API.
-
-## Architecture
-
-- **v1 (old)**: Server detects workouts, iOS syncs workouts → Complex, inflexible
-- **v2 (new)**: Server captures raw samples, you decide what's a workout → Simple, flexible
-
-The database now just stores raw samples with timestamps. No workout detection, no complex state management. Just reliable data capture.
-
-## Migration from v1
-
-If you have existing v1 data:
-
-```bash
-sqlite3 data/treadmill.db < treadmill-sync/migrate_to_v2.sql
-```
-
-Or just start fresh (delete `data/treadmill.db` and restart).
-
-## Troubleshooting
-
-### Server won't connect to treadmill
-```bash
-# Check logs
-docker-compose logs treadmill-sync
-
-# Check Bluetooth
-docker-compose exec treadmill-sync hciconfig
-```
-
-### Grafana shows no data
-- Make sure you have some treadmill data first (walk on it!)
-- Check the time range in Grafana (top right)
-- Verify database exists: `ls -la data/treadmill.db`
+MIT

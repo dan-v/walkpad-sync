@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.idea/
+.vscode/
+*.xcuserstate
+
+# Xcode
+xcuserdata/
+DerivedData/
+*.xcworkspace/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+*.xccheckout
+*.moved-aside
+
+# iOS
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Rust (also in treadmill-sync/.gitignore)
+target/
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Config (keep examples)
+config.toml
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
