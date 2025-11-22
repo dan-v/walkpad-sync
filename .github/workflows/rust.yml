@@ -56,14 +56,3 @@ jobs:
       - name: Run tests
         working-directory: treadmill-sync
         run: cargo test
-
-  docker:
-    runs-on: ubuntu-latest
-    needs: build
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Build Docker image
-        working-directory: treadmill-sync
-        run: docker build -t walkpadsync-server .
