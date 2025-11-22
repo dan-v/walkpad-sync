@@ -28,18 +28,13 @@ async fn main() -> Result<()> {
 
     info!("🚀 Starting Treadmill Sync Service v2 - Raw Data Capture Mode");
 
-    // Load configuration
-    let config = Config::from_file_or_default("config.toml");
+    // Load configuration (file -> env vars -> defaults)
+    // Environment variables override config file values
+    let config = Config::load("config.toml");
     info!(
-        "Configuration loaded: database={}, port={}, device_filter={}",
+        "Configuration: database={}, port={}, device_filter={}",
         config.database.path, config.server.port, config.bluetooth.device_name_filter
     );
-
-    // Save default config if it doesn't exist
-    if !std::path::Path::new("config.toml").exists() {
-        config.save("config.toml")?;
-        info!("Created default config.toml");
-    }
 
     // Initialize storage
     let database_url = format!("sqlite://{}", config.database.path);
