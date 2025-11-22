@@ -593,7 +593,7 @@ class HistoryViewModel: ObservableObject {
         return selectedYear == currentYear && selectedMonth == currentMonth
     }
 
-    // Streak calculation
+    // Streak calculation (weekends don't break the streak)
     var currentStreak: Int {
         guard !dailySummaries.isEmpty else { return 0 }
 
@@ -603,14 +603,25 @@ class HistoryViewModel: ObservableObject {
         var streak = 0
         var expectedDate = calendar.startOfDay(for: Date())
 
+        // Skip back from today if it's a weekend and we haven't walked yet
+        while calendar.isDateInWeekend(expectedDate) {
+            guard let prev = calendar.date(byAdding: .day, value: -1, to: expectedDate) else { break }
+            expectedDate = prev
+        }
+
         for summary in sorted {
             guard let summaryDate = summary.dateDisplay else { continue }
             let summaryDay = calendar.startOfDay(for: summaryDate)
 
             if calendar.isDate(summaryDay, inSameDayAs: expectedDate) {
                 streak += 1
-                guard let previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
+                guard var previousDate = calendar.date(byAdding: .day, value: -1, to: expectedDate) else {
                     break
+                }
+                // Skip weekends when looking for previous streak day
+                while calendar.isDateInWeekend(previousDate) {
+                    guard let prev = calendar.date(byAdding: .day, value: -1, to: previousDate) else { break }
+                    previousDate = prev
                 }
                 expectedDate = previousDate
             } else {
