@@ -1,4 +1,4 @@
-# Treadmill Sync - Docker Build
+# WalkPad Sync Server - Docker Build
 #
 # IMPORTANT: Bluetooth in Docker only works on Linux hosts.
 # macOS Docker runs in a VM without Bluetooth access.
@@ -8,7 +8,7 @@
 #     -v /var/run/dbus:/var/run/dbus \
 #     -v ./data:/data \
 #     -e TREADMILL_DB_PATH=/data/treadmill.db \
-#     treadmill-sync
+#     walkpad-server
 #
 # Or use docker-compose.yml which sets this up for you.
 
@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy binary from builder
-COPY --from=builder /usr/src/app/target/release/treadmill-sync /usr/local/bin/treadmill-sync
+COPY --from=builder /usr/src/app/target/release/walkpad-server /usr/local/bin/walkpad-server
 
 # Create data directory
 RUN mkdir -p /data
@@ -59,4 +59,4 @@ ENV TREADMILL_DEVICE_FILTER=LifeSpan
 
 EXPOSE 8080
 
-CMD ["treadmill-sync"]
+CMD ["walkpad-server"]

@@ -1,4 +1,4 @@
-# Treadmill Sync - Docker Compose
+# WalkPad Sync Server - Docker Compose
 #
 # LINUX ONLY: Bluetooth requires host network and D-Bus access.
 # This will NOT work on macOS (Docker runs in a VM without Bluetooth).
@@ -11,9 +11,9 @@
 # Data is persisted in ./data/treadmill.db
 
 services:
-  treadmill-sync:
+  walkpad-server:
     build: .
-    container_name: treadmill-sync
+    container_name: walkpad-server
     restart: unless-stopped
 
     # Required for Bluetooth access on Linux
@@ -35,7 +35,7 @@ services:
       # - TREADMILL_SCAN_TIMEOUT=30
       # - TREADMILL_RECONNECT_DELAY=5
       # Logging level (trace, debug, info, warn, error)
-      - RUST_LOG=treadmill_sync=info
+      - RUST_LOG=walkpad_server=info
 
     # Note: network_mode=host ignores port mapping
     # Access via http://localhost:8080
