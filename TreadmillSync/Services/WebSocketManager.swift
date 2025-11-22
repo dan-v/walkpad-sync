@@ -64,9 +64,9 @@ actor WebSocketManager {
         webSocketTask = session.webSocketTask(with: wsURL)
         webSocketTask?.resume()
 
+        // Note: Connection status will be set to .connected when we receive the first message
+        // This ensures we only report connected when the connection is actually working
         isConnected = true
-        connectionStatusSubject.send(.connected)
-        print("✅ WebSocket connected")
 
         // Start receiving messages
         Task {
@@ -95,9 +95,18 @@ actor WebSocketManager {
     private func receiveMessages() async {
         guard let task = webSocketTask else { return }
 
+        var isFirstMessage = true
+
         do {
             while isConnected {
                 let message = try await task.receive()
+
+                // Mark as connected after successfully receiving the first message
+                if isFirstMessage {
+                    isFirstMessage = false
+                    connectionStatusSubject.send(.connected)
+                    print("✅ WebSocket connected (received first message)")
+                }
 
                 switch message {
                 case .string(let text):
