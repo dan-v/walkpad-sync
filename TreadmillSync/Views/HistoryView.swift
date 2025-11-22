@@ -745,33 +745,16 @@ class HistoryViewModel: ObservableObject {
 
     func loadData() async {
         // Prevent concurrent execution with sync operation
-        guard !isSyncing else {
-            print("⚠️ Skipping loadData - sync in progress")
-            return
-        }
+        guard !isSyncing else { return }
 
         isLoading = true
         loadError = nil
 
         do {
-            let dates = try await apiClient.fetchActivityDates()
-            print("📅 Fetched \(dates.count) activity dates: \(dates)")
-
-            var loadedSummaries: [DailySummary] = []
-            for date in dates {
-                do {
-                    let summary = try await apiClient.fetchDailySummary(date: date)
-                    loadedSummaries.append(summary)
-                    print("✅ Loaded summary for \(date): \(summary.steps) steps")
-                } catch {
-                    print("❌ Failed to load summary for \(date): \(error)")
-                }
-            }
-
+            // Fetch all summaries in a single API call (instead of N+1 queries)
+            let loadedSummaries = try await apiClient.fetchAllSummaries()
             dailySummaries = loadedSummaries.sorted { $0.date < $1.date }
-            print("📊 Total summaries loaded: \(dailySummaries.count)")
         } catch {
-            print("❌ Error loading stats: \(error)")
             loadError = error.localizedDescription
         }
 

@@ -29,13 +29,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard", get(serve_dashboard))
         .route("/api/health", get(health_check))
         .route("/api/dates", get(get_activity_dates))
+        .route("/api/dates/summaries", get(get_all_summaries))
         .route("/api/dates/:date/summary", get(get_date_summary))
         .route("/api/dates/:date/samples", get(get_date_samples))
         .route("/api/samples", get(get_samples_by_range))
         .route("/api/stats", get(get_stats))
-        // Alias routes for dashboard compatibility
-        .route("/api/activity/dates", get(get_activity_dates))
-        .route("/api/activity/summary/:date", get(get_date_summary))
         .route("/ws/live", get(crate::websocket::ws_handler))
         .with_state(state)
 }
@@ -75,6 +73,24 @@ async fn get_activity_dates(
     let dates = state.storage.get_activity_dates(tz_offset).await?;
 
     Ok(Json(ActivityDatesResponse { dates }))
+}
+
+// Get all summaries at once (single query instead of N+1)
+#[derive(Debug, Serialize)]
+struct AllSummariesResponse {
+    summaries: Vec<DailySummary>,
+}
+
+async fn get_all_summaries(
+    State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
+) -> Result<Json<AllSummariesResponse>, ApiError> {
+    let tz_offset = query.tz_offset.unwrap_or(0);
+    info!("Getting all daily summaries (tz_offset={})", tz_offset);
+
+    let summaries = state.storage.get_all_daily_summaries(tz_offset).await?;
+
+    Ok(Json(AllSummariesResponse { summaries }))
 }
 
 // Get daily summary for a specific date

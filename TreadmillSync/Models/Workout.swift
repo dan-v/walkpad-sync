@@ -46,6 +46,10 @@ struct ActivityDatesResponse: Codable {
     let dates: [String] // YYYY-MM-DD format
 }
 
+struct AllSummariesResponse: Codable {
+    let summaries: [DailySummary]
+}
+
 struct DailySummary: Codable, Identifiable {
     let date: String // YYYY-MM-DD
     let totalSamples: Int64

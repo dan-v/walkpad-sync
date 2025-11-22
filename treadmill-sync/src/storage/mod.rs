@@ -260,4 +260,53 @@ impl Storage {
 
         Ok(row.get("count"))
     }
+
+    /// Get all daily summaries at once (more efficient than N+1 queries)
+    ///
+    /// # Arguments
+    /// * `tz_offset_seconds` - Timezone offset from UTC in seconds
+    pub async fn get_all_daily_summaries(&self, tz_offset_seconds: i32) -> Result<Vec<DailySummary>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                DATE(timestamp + ?, 'unixepoch') as date,
+                COUNT(*) as total_samples,
+                COALESCE(SUM(distance_delta), 0) as distance_meters,
+                COALESCE(SUM(calories_delta), 0) as calories,
+                COALESCE(SUM(steps_delta), 0) as steps,
+                COALESCE(AVG(speed), 0) as avg_speed,
+                COALESCE(MAX(speed), 0) as max_speed,
+                MIN(timestamp) as first_timestamp,
+                MAX(timestamp) as last_timestamp
+            FROM treadmill_samples
+            WHERE speed > 0.0
+            GROUP BY DATE(timestamp + ?, 'unixepoch')
+            ORDER BY date DESC
+            "#
+        )
+        .bind(tz_offset_seconds)
+        .bind(tz_offset_seconds)
+        .fetch_all(&self.pool)
+        .await?;
+
+        let summaries = rows
+            .iter()
+            .map(|row| {
+                let first_timestamp: i64 = row.get("first_timestamp");
+                let last_timestamp: i64 = row.get("last_timestamp");
+                DailySummary {
+                    date: row.get("date"),
+                    total_samples: row.get("total_samples"),
+                    duration_seconds: last_timestamp - first_timestamp,
+                    distance_meters: row.get("distance_meters"),
+                    calories: row.get("calories"),
+                    steps: row.get("steps"),
+                    avg_speed: row.get("avg_speed"),
+                    max_speed: row.get("max_speed"),
+                }
+            })
+            .collect();
+
+        Ok(summaries)
+    }
 }

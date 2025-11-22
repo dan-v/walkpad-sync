@@ -78,6 +78,45 @@ actor APIClient {
         }
     }
 
+    // MARK: - All Summaries (batch fetch - single query instead of N+1)
+
+    func fetchAllSummaries() async throws -> [DailySummary] {
+        guard var urlComponents = URLComponents(string: "\(config.baseURL)/api/dates/summaries") else {
+            throw APIError.invalidURL
+        }
+
+        urlComponents.queryItems = [
+            URLQueryItem(name: "tz_offset", value: "\(timezoneOffsetSeconds)")
+        ]
+
+        guard let url = urlComponents.url else {
+            throw APIError.invalidURL
+        }
+
+        do {
+            let (data, response) = try await session.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.serverError(0)
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw APIError.serverError(httpResponse.statusCode)
+            }
+
+            let result = try JSONDecoder().decode(AllSummariesResponse.self, from: data)
+            return result.summaries
+        } catch let error as APIError {
+            throw error
+        } catch let error as URLError {
+            throw APIError.fromURLError(error)
+        } catch is DecodingError {
+            throw APIError.decodingError
+        } catch {
+            throw APIError.unknown(error.localizedDescription)
+        }
+    }
+
     // MARK: - Daily Summary
 
     func fetchDailySummary(date: String) async throws -> DailySummary {
