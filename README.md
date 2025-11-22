@@ -63,7 +63,7 @@ Or use `config.toml` (environment variables override file values).
 
 ## iOS App
 
-Open `TreadmillSync.xcodeproj` in Xcode, update the bundle identifier and team, then build and run.
+Open `WalkPadSync.xcodeproj` in Xcode, update the bundle identifier and team, then build and run.
 
 Configure the server address in the app settings.
 

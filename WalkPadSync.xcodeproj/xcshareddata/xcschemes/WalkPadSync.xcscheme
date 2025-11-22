@@ -15,9 +15,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "FF000001"
-               BuildableName = "TreadmillSync.app"
-               BlueprintName = "TreadmillSync"
-               ReferencedContainer = "container:TreadmillSync.xcodeproj">
+               BuildableName = "WalkPadSync.app"
+               BlueprintName = "WalkPadSync"
+               ReferencedContainer = "container:WalkPadSync.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "FF000001"
-            BuildableName = "TreadmillSync.app"
-            BlueprintName = "TreadmillSync"
-            ReferencedContainer = "container:TreadmillSync.xcodeproj">
+            BuildableName = "WalkPadSync.app"
+            BlueprintName = "WalkPadSync"
+            ReferencedContainer = "container:WalkPadSync.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,9 +62,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "FF000001"
-            BuildableName = "TreadmillSync.app"
-            BlueprintName = "TreadmillSync"
-            ReferencedContainer = "container:TreadmillSync.xcodeproj">
+            BuildableName = "WalkPadSync.app"
+            BlueprintName = "WalkPadSync"
+            ReferencedContainer = "container:WalkPadSync.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

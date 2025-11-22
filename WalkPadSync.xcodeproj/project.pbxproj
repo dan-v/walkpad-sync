@@ -20,7 +20,7 @@
 		372677ED2ECEDAD30017AC87 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677D62ECEDAD30017AC87 /* HealthKitManager.swift */; };
 		372678122ED131690017AC87 /* SyncStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678102ED131690017AC87 /* SyncStateManager.swift */; };
 		372678132ED131690017AC87 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678112ED131690017AC87 /* WebSocketManager.swift */; };
-		AA000001 /* TreadmillSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* TreadmillSyncApp.swift */; };
+		AA000001 /* WalkPadSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* WalkPadSyncApp.swift */; };
 		BB000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000014 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -38,12 +38,12 @@
 		372677E02ECEDAD30017AC87 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		372678102ED131690017AC87 /* SyncStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStateManager.swift; sourceTree = "<group>"; };
 		372678112ED131690017AC87 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
-		BB000001 /* TreadmillSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreadmillSyncApp.swift; sourceTree = "<group>"; };
+		BB000001 /* WalkPadSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkPadSyncApp.swift; sourceTree = "<group>"; };
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		BB000012 /* TreadmillSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TreadmillSync.entitlements; sourceTree = "<group>"; };
+		BB000012 /* WalkPadSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WalkPadSync.entitlements; sourceTree = "<group>"; };
 		BB000013 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		BB000014 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
-		CC000001 /* TreadmillSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = TreadmillSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CC000001 /* WalkPadSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = WalkPadSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,18 +102,18 @@
 		EE000001 = {
 			isa = PBXGroup;
 			children = (
-				EE000002 /* TreadmillSync */,
+				EE000002 /* WalkPadSync */,
 				EE000003 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		EE000002 /* TreadmillSync */ = {
+		EE000002 /* WalkPadSync */ = {
 			isa = PBXGroup;
 			children = (
-				BB000001 /* TreadmillSyncApp.swift */,
+				BB000001 /* WalkPadSyncApp.swift */,
 				BB000014 /* Assets.xcassets */,
 				BB000011 /* Info.plist */,
-				BB000012 /* TreadmillSync.entitlements */,
+				BB000012 /* WalkPadSync.entitlements */,
 				BB000013 /* PrivacyInfo.xcprivacy */,
 				372677D42ECEDAD30017AC87 /* Models */,
 				372677D72ECEDAD30017AC87 /* Services */,
@@ -125,7 +125,7 @@
 		EE000003 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				CC000001 /* TreadmillSync.app */,
+				CC000001 /* WalkPadSync.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -133,9 +133,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		FF000001 /* TreadmillSync */ = {
+		FF000001 /* WalkPadSync */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = FF000002 /* Build configuration list for PBXNativeTarget "TreadmillSync" */;
+			buildConfigurationList = FF000002 /* Build configuration list for PBXNativeTarget "WalkPadSync" */;
 			buildPhases = (
 				FF000003 /* Sources */,
 				DD000001 /* Frameworks */,
@@ -145,9 +145,9 @@
 			);
 			dependencies = (
 			);
-			name = TreadmillSync;
-			productName = TreadmillSync;
-			productReference = CC000001 /* TreadmillSync.app */;
+			name = WalkPadSync;
+			productName = WalkPadSync;
+			productReference = CC000001 /* WalkPadSync.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -165,7 +165,7 @@
 					};
 				};
 			};
-			buildConfigurationList = GG000002 /* Build configuration list for PBXProject "TreadmillSync" */;
+			buildConfigurationList = GG000002 /* Build configuration list for PBXProject "WalkPadSync" */;
 			compatibilityVersion = "Xcode 14.0";
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
@@ -178,7 +178,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				FF000001 /* TreadmillSync */,
+				FF000001 /* WalkPadSync */,
 			);
 		};
 /* End PBXProject section */
@@ -199,7 +199,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				AA000001 /* TreadmillSyncApp.swift in Sources */,
+				AA000001 /* WalkPadSyncApp.swift in Sources */,
 				372677E22ECEDAD30017AC87 /* ActivityDetailView.swift in Sources */,
 				372677E32ECEDAD30017AC87 /* Workout.swift in Sources */,
 				372677E42ECEDAD30017AC87 /* HistoryView.swift in Sources */,
@@ -343,7 +343,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = ios/TreadmillSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/WalkPadSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TM2Q7CGVRH;
@@ -376,7 +376,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = ios/TreadmillSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/WalkPadSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TM2Q7CGVRH;
@@ -407,7 +407,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		FF000002 /* Build configuration list for PBXNativeTarget "TreadmillSync" */ = {
+		FF000002 /* Build configuration list for PBXNativeTarget "WalkPadSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				II000001 /* Debug */,
@@ -416,7 +416,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		GG000002 /* Build configuration list for PBXProject "TreadmillSync" */ = {
+		GG000002 /* Build configuration list for PBXProject "WalkPadSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				HH000001 /* Debug */,
