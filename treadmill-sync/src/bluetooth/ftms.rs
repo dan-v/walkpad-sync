@@ -57,7 +57,9 @@ impl LifeSpanQuery {
 
 /// Parsed treadmill data from any protocol.
 /// All fields are optional as different protocols provide different data.
+/// Some fields are unused by LifeSpan but included for future protocol support.
 #[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
 pub struct TreadmillData {
     pub speed: Option<f64>,           // m/s
     pub incline: Option<f64>,         // percentage

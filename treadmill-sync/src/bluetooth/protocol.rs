@@ -52,10 +52,11 @@ use super::ftms::{LifeSpanQuery, TreadmillData, LIFESPAN_CHAR_UUID};
 
 /// Communication mode for the protocol
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum ProtocolMode {
-    /// Device pushes notifications automatically
+    /// Device pushes notifications automatically (for future protocols)
     Passive,
-    /// Need to poll the device for data
+    /// Need to poll the device for data (used by LifeSpan)
     Polling { interval_ms: u64 },
 }
 
