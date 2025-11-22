@@ -183,9 +183,7 @@ impl Storage {
                 COALESCE(SUM(calories_delta), 0) as calories,
                 COALESCE(SUM(steps_delta), 0) as steps,
                 COALESCE(AVG(speed), 0) as avg_speed,
-                COALESCE(MAX(speed), 0) as max_speed,
-                MIN(timestamp) as first_timestamp,
-                MAX(timestamp) as last_timestamp
+                COALESCE(MAX(speed), 0) as max_speed
             FROM treadmill_samples
             WHERE timestamp >= ? AND timestamp < ?
               AND speed > 0.0
@@ -207,12 +205,10 @@ impl Storage {
         let steps: i64 = summary.get("steps");
         let avg_speed: f64 = summary.get("avg_speed");
         let max_speed: f64 = summary.get("max_speed");
-        let first_timestamp: i64 = summary.get("first_timestamp");
-        let last_timestamp: i64 = summary.get("last_timestamp");
 
-        // Calculate duration as actual time elapsed (last_timestamp - first_timestamp)
-        // Since we're only querying samples where speed > 0, this represents actual active time
-        let duration_seconds = last_timestamp - first_timestamp;
+        // Calculate actual active duration by summing intervals between consecutive samples
+        // This handles gaps properly (e.g., if someone takes a break, that time isn't counted)
+        let duration_seconds = self.calculate_active_duration(start_unix, end_unix).await?;
 
         Ok(Some(DailySummary {
             date: date_str,
@@ -224,6 +220,50 @@ impl Storage {
             avg_speed,
             max_speed,
         }))
+    }
+
+    /// Calculate actual active duration by summing intervals between consecutive samples
+    /// Only counts intervals of 10 seconds or less (typical sample rate is ~1s)
+    /// Longer gaps indicate the treadmill was stopped
+    async fn calculate_active_duration(&self, start_unix: i64, end_unix: i64) -> Result<i64> {
+        // Get all timestamps for active samples (speed > 0)
+        let rows = sqlx::query(
+            r#"
+            SELECT timestamp
+            FROM treadmill_samples
+            WHERE timestamp >= ? AND timestamp < ?
+              AND speed > 0.0
+            ORDER BY timestamp ASC
+            "#,
+        )
+        .bind(start_unix)
+        .bind(end_unix)
+        .fetch_all(&self.pool)
+        .await?;
+
+        if rows.is_empty() {
+            return Ok(0);
+        }
+
+        // Maximum gap to consider as "continuous" activity (10 seconds)
+        // Samples typically arrive every 1-2 seconds, so 10s allows for some jitter
+        const MAX_CONTINUOUS_GAP: i64 = 10;
+
+        let mut total_duration: i64 = 0;
+        let mut prev_timestamp: Option<i64> = None;
+
+        for row in rows {
+            let timestamp: i64 = row.get("timestamp");
+            if let Some(prev) = prev_timestamp {
+                let gap = timestamp - prev;
+                if gap <= MAX_CONTINUOUS_GAP {
+                    total_duration += gap;
+                }
+            }
+            prev_timestamp = Some(timestamp);
+        }
+
+        Ok(total_duration)
     }
 
     /// Get all dates that have activity (samples with speed > 0)
@@ -255,7 +295,8 @@ impl Storage {
     /// Get the latest sample (for debugging/status)
     pub async fn get_latest_sample(&self) -> Result<Option<TreadmillSample>> {
         let sample = sqlx::query_as::<_, TreadmillSample>(
-            "SELECT timestamp, speed, distance_total, calories_total, steps_total
+            "SELECT timestamp, speed, distance_total, calories_total, steps_total,
+                    distance_delta, calories_delta, steps_delta
              FROM treadmill_samples
              ORDER BY timestamp DESC
              LIMIT 1",
@@ -283,6 +324,7 @@ impl Storage {
         &self,
         tz_offset_seconds: i32,
     ) -> Result<Vec<DailySummary>> {
+        // First, get aggregated stats per day
         let rows = sqlx::query(
             r#"
             SELECT
@@ -292,9 +334,7 @@ impl Storage {
                 COALESCE(SUM(calories_delta), 0) as calories,
                 COALESCE(SUM(steps_delta), 0) as steps,
                 COALESCE(AVG(speed), 0) as avg_speed,
-                COALESCE(MAX(speed), 0) as max_speed,
-                MIN(timestamp) as first_timestamp,
-                MAX(timestamp) as last_timestamp
+                COALESCE(MAX(speed), 0) as max_speed
             FROM treadmill_samples
             WHERE speed > 0.0
             GROUP BY DATE(timestamp + ?, 'unixepoch')
@@ -306,23 +346,34 @@ impl Storage {
         .fetch_all(&self.pool)
         .await?;
 
-        let summaries = rows
-            .iter()
-            .map(|row| {
-                let first_timestamp: i64 = row.get("first_timestamp");
-                let last_timestamp: i64 = row.get("last_timestamp");
-                DailySummary {
-                    date: row.get("date"),
-                    total_samples: row.get("total_samples"),
-                    duration_seconds: last_timestamp - first_timestamp,
-                    distance_meters: row.get("distance_meters"),
-                    calories: row.get("calories"),
-                    steps: row.get("steps"),
-                    avg_speed: row.get("avg_speed"),
-                    max_speed: row.get("max_speed"),
-                }
-            })
-            .collect();
+        // Calculate duration for each day using proper gap detection
+        let mut summaries = Vec::with_capacity(rows.len());
+
+        for row in rows {
+            let date: String = row.get("date");
+
+            // Parse date to get timestamp range for duration calculation
+            let naive_date = NaiveDate::parse_from_str(&date, "%Y-%m-%d")?;
+            let start_local = naive_date
+                .and_hms_opt(0, 0, 0)
+                .ok_or_else(|| anyhow::anyhow!("Invalid date time"))?;
+            let end_local = start_local + chrono::Duration::days(1);
+            let start_unix = start_local.and_utc().timestamp() - tz_offset_seconds as i64;
+            let end_unix = end_local.and_utc().timestamp() - tz_offset_seconds as i64;
+
+            let duration_seconds = self.calculate_active_duration(start_unix, end_unix).await?;
+
+            summaries.push(DailySummary {
+                date,
+                total_samples: row.get("total_samples"),
+                duration_seconds,
+                distance_meters: row.get("distance_meters"),
+                calories: row.get("calories"),
+                steps: row.get("steps"),
+                avg_speed: row.get("avg_speed"),
+                max_speed: row.get("max_speed"),
+            });
+        }
 
         Ok(summaries)
     }

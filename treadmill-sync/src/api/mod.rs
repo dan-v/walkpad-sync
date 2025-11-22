@@ -8,9 +8,10 @@ use axum::{
 use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, RwLock};
 use tracing::{error, info, warn};
 
+use crate::bluetooth::ConnectionStatus;
 use crate::storage::{DailySummary, Storage, TreadmillSample};
 use crate::websocket::WsMessage;
 
@@ -21,6 +22,7 @@ const MAX_DATE_RANGE_DAYS: i64 = 365;
 pub struct AppState {
     pub storage: Arc<Storage>,
     pub ws_tx: broadcast::Sender<WsMessage>,
+    pub bluetooth_status: Arc<RwLock<ConnectionStatus>>,
 }
 
 pub fn create_router(state: AppState) -> Router {
@@ -28,6 +30,7 @@ pub fn create_router(state: AppState) -> Router {
         .route("/", get(serve_dashboard))
         .route("/dashboard", get(serve_dashboard))
         .route("/api/health", get(health_check))
+        .route("/api/bluetooth/status", get(get_bluetooth_status))
         .route("/api/dates", get(get_activity_dates))
         .route("/api/dates/summaries", get(get_all_summaries))
         .route("/api/dates/:date/summary", get(get_date_summary))
@@ -44,11 +47,44 @@ async fn serve_dashboard() -> Html<&'static str> {
 }
 
 // Health check endpoint
-async fn health_check() -> impl IntoResponse {
+async fn health_check(State(state): State<AppState>) -> impl IntoResponse {
+    let bt_status = state.bluetooth_status.read().await;
+    let (bt_connected, bt_status_str) = match *bt_status {
+        ConnectionStatus::Connected => (true, "connected"),
+        ConnectionStatus::Connecting => (false, "connecting"),
+        ConnectionStatus::Scanning => (false, "scanning"),
+        ConnectionStatus::Disconnected => (false, "disconnected"),
+        ConnectionStatus::Error => (false, "error"),
+    };
+
     Json(serde_json::json!({
         "status": "ok",
         "server_time": Utc::now().to_rfc3339(),
+        "bluetooth": {
+            "connected": bt_connected,
+            "status": bt_status_str
+        }
     }))
+}
+
+// Bluetooth status endpoint
+#[derive(Debug, Serialize)]
+struct BluetoothStatusResponse {
+    connected: bool,
+    status: String,
+}
+
+async fn get_bluetooth_status(State(state): State<AppState>) -> impl IntoResponse {
+    let bt_status = state.bluetooth_status.read().await;
+    let (connected, status) = match *bt_status {
+        ConnectionStatus::Connected => (true, "connected".to_string()),
+        ConnectionStatus::Connecting => (false, "connecting".to_string()),
+        ConnectionStatus::Scanning => (false, "scanning".to_string()),
+        ConnectionStatus::Disconnected => (false, "disconnected".to_string()),
+        ConnectionStatus::Error => (false, "error".to_string()),
+    };
+
+    Json(BluetoothStatusResponse { connected, status })
 }
 
 // Get all dates with activity
