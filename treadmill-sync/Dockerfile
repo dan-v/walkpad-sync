@@ -1,4 +1,18 @@
-FROM rust:1.91 AS builder
+# Treadmill Sync - Docker Build
+#
+# IMPORTANT: Bluetooth in Docker only works on Linux hosts.
+# macOS Docker runs in a VM without Bluetooth access.
+#
+# For Linux, run with:
+#   docker run --net=host --privileged \
+#     -v /var/run/dbus:/var/run/dbus \
+#     -v ./data:/data \
+#     -e TREADMILL_DB_PATH=/data/treadmill.db \
+#     treadmill-sync
+#
+# Or use docker-compose.yml which sets this up for you.
+
+FROM rust:1.82 AS builder
 
 WORKDIR /usr/src/app
 
@@ -11,9 +25,10 @@ RUN apt-get update && apt-get install -y \
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
 
-# Copy source
+# Copy source and embedded files
 COPY src ./src
 COPY schema_v2.sql ./
+COPY static ./static
 
 # Build release
 RUN cargo build --release
@@ -25,7 +40,6 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y \
     libdbus-1-3 \
     ca-certificates \
-    curl \
     bluez \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,10 +49,13 @@ COPY --from=builder /usr/src/app/target/release/treadmill-sync /usr/local/bin/tr
 # Create data directory
 RUN mkdir -p /data
 
-# Copy config template (will be overridden by docker-compose volume)
-COPY config.example.toml /etc/treadmill-sync/config.toml
-
 WORKDIR /data
+
+# Environment variable defaults (can be overridden at runtime)
+ENV TREADMILL_DB_PATH=/data/treadmill.db
+ENV TREADMILL_HOST=0.0.0.0
+ENV TREADMILL_PORT=8080
+ENV TREADMILL_DEVICE_FILTER=LifeSpan
 
 EXPOSE 8080
 
