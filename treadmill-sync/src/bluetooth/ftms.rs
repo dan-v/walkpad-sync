@@ -163,7 +163,7 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
             offset += 2;
         }
 
-        if data.len() >= offset + 1 {
+        if data.len() > offset {
             offset += 1; // Skip energy per minute
         }
     }
@@ -227,14 +227,14 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
 
     // Validate parsed data for sanity
     if let Some(speed) = result.speed {
-        if speed < 0.0 || speed > 50.0 {
+        if !(0.0..=50.0).contains(&speed) {
             // 50 m/s = 180 km/h (impossible for treadmill)
             return Err(anyhow!("Invalid speed: {} m/s", speed));
         }
     }
 
     if let Some(incline) = result.incline {
-        if incline < -15.0 || incline > 40.0 {
+        if !(-15.0..=40.0).contains(&incline) {
             // Reasonable treadmill limits
             return Err(anyhow!("Invalid incline: {}%", incline));
         }
@@ -307,7 +307,7 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             let speed_ms = speed_mph * 0.44704;
 
             // Validate: speed should be reasonable (0-5 mph for walking pads)
-            if speed_mph >= 0.0 && speed_mph <= 5.0 {
+            if (0.0..=5.0).contains(&speed_mph) {
                 result.speed = Some(speed_ms);
                 debug!("LifeSpan speed: {:.2} mph = {:.2} m/s", speed_mph, speed_ms);
             } else if speed_mph > 5.0 {

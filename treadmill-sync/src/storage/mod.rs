@@ -63,6 +63,7 @@ impl Storage {
     }
 
     /// Add a raw sample from the treadmill
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_sample(
         &self,
         timestamp: DateTime<Utc>,
