@@ -405,6 +405,10 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
 mod tests {
     use super::*;
 
+    // ========================================================================
+    // FTMS Protocol Tests
+    // ========================================================================
+
     #[test]
     fn test_parse_basic_treadmill_data() {
         // Example data with speed, distance, and energy
@@ -420,5 +424,127 @@ mod tests {
         assert!(result.speed.is_some());
         assert!(result.distance.is_some());
         assert_eq!(result.distance.unwrap(), 100);
+    }
+
+    #[test]
+    fn test_ftms_data_too_short() {
+        let data = vec![0x00]; // Only 1 byte, need at least 2 for flags
+        assert!(parse_treadmill_data(&data).is_err());
+    }
+
+    // ========================================================================
+    // LifeSpan Protocol Tests
+    // ========================================================================
+
+    #[test]
+    fn test_lifespan_speed_parsing() {
+        // Speed format: [A1, AA, whole_mph, hundredths]
+        // 2.50 mph = 2*100 + 50 = 250 hundredths
+        let data = vec![0xA1, 0xAA, 0x02, 0x32]; // 2.50 mph
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Speed).unwrap();
+
+        assert!(result.speed.is_some());
+        let speed_ms = result.speed.unwrap();
+        let speed_mph = speed_ms / 0.44704;
+        assert!(
+            (speed_mph - 2.50).abs() < 0.01,
+            "Expected ~2.50 mph, got {}",
+            speed_mph
+        );
+    }
+
+    #[test]
+    fn test_lifespan_speed_zero() {
+        let data = vec![0xA1, 0xAA, 0x00, 0x00]; // 0 mph
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Speed).unwrap();
+
+        // Speed 0 is valid but won't be set (filtered by validation)
+        assert!(result.speed.is_none() || result.speed.unwrap() == 0.0);
+    }
+
+    #[test]
+    fn test_lifespan_distance_parsing() {
+        // Distance format: 16-bit big-endian hundredths of miles
+        // [A1, AA, HIGH, LOW] where value = 100 = 1.00 miles
+        let data = vec![0xA1, 0xAA, 0x00, 0x64]; // 100 hundredths = 1.00 mile
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Distance).unwrap();
+
+        assert!(result.distance.is_some());
+        let distance_m = result.distance.unwrap();
+        let distance_miles = distance_m as f64 / 1609.34;
+        assert!(
+            (distance_miles - 1.0).abs() < 0.01,
+            "Expected ~1.0 mile, got {}",
+            distance_miles
+        );
+    }
+
+    #[test]
+    fn test_lifespan_calories_parsing() {
+        // Calories format: 16-bit big-endian kcal
+        let data = vec![0xA1, 0xAA, 0x01, 0xF4]; // 0x01F4 = 500 kcal
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Calories).unwrap();
+
+        assert!(result.total_energy.is_some());
+        assert_eq!(result.total_energy.unwrap(), 500);
+    }
+
+    #[test]
+    fn test_lifespan_steps_parsing() {
+        // Steps format: 16-bit big-endian
+        let data = vec![0xA1, 0xAA, 0x27, 0x10]; // 0x2710 = 10000 steps
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Steps).unwrap();
+
+        assert!(result.steps.is_some());
+        assert_eq!(result.steps.unwrap(), 10000);
+    }
+
+    #[test]
+    fn test_lifespan_time_parsing() {
+        // Time format: [A1, AA, ??, hours, minutes, seconds]
+        let data = vec![0xA1, 0xAA, 0x00, 0x01, 0x30, 0x00]; // 1h 48m 0s
+        let result = parse_lifespan_response(&data, LifeSpanQuery::Time).unwrap();
+
+        assert!(result.elapsed_time.is_some());
+        assert_eq!(result.elapsed_time.unwrap(), 1 * 3600 + 48 * 60 + 0);
+    }
+
+    #[test]
+    fn test_lifespan_data_too_short() {
+        let data = vec![0xA1, 0xAA, 0x00]; // Only 3 bytes, need 4+
+        assert!(parse_lifespan_response(&data, LifeSpanQuery::Speed).is_err());
+    }
+
+    #[test]
+    fn test_lifespan_query_commands() {
+        // Verify all query commands are correctly defined
+        assert_eq!(
+            LifeSpanQuery::Speed.command(),
+            [0xA1, 0x82, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            LifeSpanQuery::Distance.command(),
+            [0xA1, 0x85, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            LifeSpanQuery::Calories.command(),
+            [0xA1, 0x87, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            LifeSpanQuery::Steps.command(),
+            [0xA1, 0x88, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            LifeSpanQuery::Time.command(),
+            [0xA1, 0x89, 0x00, 0x00, 0x00]
+        );
+    }
+
+    #[test]
+    fn test_lifespan_all_queries_order() {
+        // Time should be last (used to mark end of polling cycle)
+        let queries = LifeSpanQuery::all_queries();
+        assert_eq!(queries.len(), 5);
+        assert_eq!(queries[4], LifeSpanQuery::Time);
     }
 }

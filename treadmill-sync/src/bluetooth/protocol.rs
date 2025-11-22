@@ -3,30 +3,53 @@
 //! This module provides a trait-based abstraction for different treadmill protocols,
 //! making it easy to add support for new treadmill models in the future.
 //!
+//! # Currently Supported Protocols
+//!
+//! - **FTMS Standard**: Bluetooth SIG Fitness Machine Service (passive notifications)
+//! - **LifeSpan Proprietary**: Polling-based protocol for LifeSpan TR1200-DT3 and similar
+//!
 //! # Adding Support for a New Treadmill Model
 //!
-//! 1. Create a new module in `bluetooth/protocols/` (e.g., `bluetooth/protocols/walkingpad.rs`)
-//! 2. Implement the `TreadmillProtocol` trait for your protocol
-//! 3. Add the protocol detection logic in `detect_protocol()`
+//! To add support for a new treadmill:
 //!
-//! ## Example Implementation
+//! 1. **Discover the protocol**: Use a BLE scanner app to find your treadmill's
+//!    service and characteristic UUIDs. Note whether it pushes data (passive)
+//!    or requires polling.
 //!
-//! ```rust,ignore
-//! pub struct WalkingPadProtocol;
+//! 2. **Add UUID constant**: In `ftms.rs`, add your characteristic UUID:
+//!    ```rust,ignore
+//!    pub const MY_TREADMILL_UUID: Uuid = Uuid::from_u128(0x0000XXXX_0000_1000_8000_00805F9B34FB);
+//!    ```
 //!
-//! impl TreadmillProtocol for WalkingPadProtocol {
-//!     fn name(&self) -> &'static str { "WalkingPad" }
-//!     fn characteristic_uuid(&self) -> Uuid { /* ... */ }
-//!     // ... implement other methods
-//! }
-//! ```
+//! 3. **Implement parser**: In `ftms.rs`, add a parsing function for your data format:
+//!    ```rust,ignore
+//!    pub fn parse_my_treadmill_data(data: &[u8]) -> Result<TreadmillData> { ... }
+//!    ```
+//!
+//! 4. **Create protocol struct**: Below, implement `TreadmillProtocol`:
+//!    ```rust,ignore
+//!    #[derive(Debug)]
+//!    pub struct MyTreadmillProtocol;
+//!
+//!    impl TreadmillProtocol for MyTreadmillProtocol {
+//!        fn name(&self) -> &'static str { "My Treadmill" }
+//!        fn characteristic_uuid(&self) -> Uuid { MY_TREADMILL_UUID }
+//!        fn mode(&self) -> ProtocolMode { ProtocolMode::Passive }
+//!        fn parse_data(&self, data: &[u8], _: Option<QueryType>) -> Result<TreadmillData> {
+//!            parse_my_treadmill_data(data)
+//!        }
+//!    }
+//!    ```
+//!
+//! 5. **Register protocol**: Add detection in `detect_protocol()` and
+//!    `supported_protocol_uuids()`.
 
 use anyhow::Result;
 use btleplug::api::Characteristic;
 use std::fmt::Debug;
 use uuid::Uuid;
 
-use super::ftms::{TreadmillData, LIFESPAN_DATA_UUID, TREADMILL_DATA_UUID};
+use super::ftms::{LifeSpanQuery, TreadmillData, LIFESPAN_DATA_UUID, TREADMILL_DATA_UUID};
 
 /// Communication mode for the protocol
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -191,15 +214,16 @@ impl TreadmillProtocol for LifeSpanProtocol {
     }
 
     fn query_command(&self, query: QueryType) -> Option<Vec<u8>> {
-        let cmd = match query {
-            QueryType::Steps => [0xA1, 0x88, 0x00, 0x00, 0x00],
-            QueryType::Distance => [0xA1, 0x85, 0x00, 0x00, 0x00],
-            QueryType::Calories => [0xA1, 0x87, 0x00, 0x00, 0x00],
-            QueryType::Speed => [0xA1, 0x82, 0x00, 0x00, 0x00],
-            QueryType::Time => [0xA1, 0x89, 0x00, 0x00, 0x00],
+        // Delegate to LifeSpanQuery to avoid duplicating command bytes
+        let lifespan_query = match query {
+            QueryType::Steps => LifeSpanQuery::Steps,
+            QueryType::Distance => LifeSpanQuery::Distance,
+            QueryType::Calories => LifeSpanQuery::Calories,
+            QueryType::Speed => LifeSpanQuery::Speed,
+            QueryType::Time => LifeSpanQuery::Time,
             _ => return None,
         };
-        Some(cmd.to_vec())
+        Some(lifespan_query.command().to_vec())
     }
 
     fn parse_data(&self, data: &[u8], query: Option<QueryType>) -> Result<TreadmillData> {
@@ -221,36 +245,3 @@ impl TreadmillProtocol for LifeSpanProtocol {
         query == QueryType::Time
     }
 }
-
-// ============================================================================
-// Future Protocol Template
-// ============================================================================
-
-// /// Template for adding a new treadmill protocol
-// ///
-// /// Copy this and modify for your treadmill model:
-// ///
-// /// ```rust,ignore
-// /// #[derive(Debug)]
-// /// pub struct MyTreadmillProtocol;
-// ///
-// /// impl TreadmillProtocol for MyTreadmillProtocol {
-// ///     fn name(&self) -> &'static str {
-// ///         "My Treadmill Brand"
-// ///     }
-// ///
-// ///     fn characteristic_uuid(&self) -> Uuid {
-// ///         Uuid::from_u128(0x0000XXXX_0000_1000_8000_00805F9B34FB)
-// ///     }
-// ///
-// ///     fn mode(&self) -> ProtocolMode {
-// ///         ProtocolMode::Passive // or ProtocolMode::Polling { interval_ms: 500 }
-// ///     }
-// ///
-// ///     fn parse_data(&self, data: &[u8], _query: Option<QueryType>) -> Result<TreadmillData> {
-// ///         // Parse your device's data format here
-// ///         // Return TreadmillData with whatever fields you can extract
-// ///         todo!("Implement parsing for your device")
-// ///     }
-// /// }
-// /// ```
