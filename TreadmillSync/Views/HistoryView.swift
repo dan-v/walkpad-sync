@@ -8,12 +8,46 @@ struct HistoryView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
+                    // Error banner
+                    if let error = viewModel.loadError {
+                        HStack(spacing: 12) {
+                            Image(systemName: "wifi.exclamationmark")
+                                .foregroundColor(.white)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Connection Error")
+                                    .font(.subheadline)
+                                    .fontWeight(.semibold)
+                                    .foregroundColor(.white)
+                                Text(error)
+                                    .font(.caption)
+                                    .foregroundColor(.white.opacity(0.9))
+                            }
+                            Spacer()
+                            Button {
+                                Task { await viewModel.loadData() }
+                            } label: {
+                                Text("Retry")
+                                    .font(.caption)
+                                    .fontWeight(.semibold)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color.white.opacity(0.2))
+                                    .cornerRadius(8)
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .padding()
+                        .background(Color.red)
+                        .cornerRadius(12)
+                        .padding(.horizontal)
+                    }
+
                     if viewModel.isLoading {
                         ProgressView("Loading stats...")
                             .padding()
-                    } else if viewModel.dailySummaries.isEmpty {
+                    } else if viewModel.dailySummaries.isEmpty && viewModel.loadError == nil {
                         emptyState
-                    } else {
+                    } else if !viewModel.dailySummaries.isEmpty {
                         // Full Month Calendar
                         monthCalendar
 
@@ -521,6 +555,7 @@ class HistoryViewModel: ObservableObject {
     @Published var selectedDaySummary: DailySummary?
     @Published var isSyncing = false
     @Published var syncError: String?
+    @Published var loadError: String?
 
     private let apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
@@ -716,6 +751,7 @@ class HistoryViewModel: ObservableObject {
         }
 
         isLoading = true
+        loadError = nil
 
         do {
             let dates = try await apiClient.fetchActivityDates()
@@ -736,6 +772,7 @@ class HistoryViewModel: ObservableObject {
             print("📊 Total summaries loaded: \(dailySummaries.count)")
         } catch {
             print("❌ Error loading stats: \(error)")
+            loadError = error.localizedDescription
         }
 
         isLoading = false

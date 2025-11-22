@@ -8,8 +8,8 @@ actor APIClient {
         self.config = config
 
         let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 30
-        configuration.timeoutIntervalForResource = 60
+        configuration.timeoutIntervalForRequest = 10
+        configuration.timeoutIntervalForResource = 30
         self.session = URLSession(configuration: configuration)
     }
 
@@ -24,13 +24,18 @@ actor APIClient {
         guard let url = URL(string: "\(config.baseURL)/api/health") else {
             throw APIError.invalidURL
         }
-        let (_, response) = try await session.data(from: url)
 
-        guard let httpResponse = response as? HTTPURLResponse else {
-            return false
+        do {
+            let (_, response) = try await session.data(from: url)
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                return false
+            }
+
+            return httpResponse.statusCode == 200
+        } catch let error as URLError {
+            throw APIError.fromURLError(error)
         }
-
-        return httpResponse.statusCode == 200
     }
 
     // MARK: - Activity Dates
@@ -49,15 +54,28 @@ actor APIClient {
             throw APIError.invalidURL
         }
 
-        let (data, response) = try await session.data(from: url)
+        do {
+            let (data, response) = try await session.data(from: url)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.serverError(0)
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw APIError.serverError(httpResponse.statusCode)
+            }
+
+            let result = try JSONDecoder().decode(ActivityDatesResponse.self, from: data)
+            return result.dates
+        } catch let error as APIError {
+            throw error
+        } catch let error as URLError {
+            throw APIError.fromURLError(error)
+        } catch is DecodingError {
+            throw APIError.decodingError
+        } catch {
+            throw APIError.unknown(error.localizedDescription)
         }
-
-        let result = try JSONDecoder().decode(ActivityDatesResponse.self, from: data)
-        return result.dates
     }
 
     // MARK: - Daily Summary
@@ -76,14 +94,27 @@ actor APIClient {
             throw APIError.invalidURL
         }
 
-        let (data, response) = try await session.data(from: url)
+        do {
+            let (data, response) = try await session.data(from: url)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.serverError(0)
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw APIError.serverError(httpResponse.statusCode)
+            }
+
+            return try JSONDecoder().decode(DailySummary.self, from: data)
+        } catch let error as APIError {
+            throw error
+        } catch let error as URLError {
+            throw APIError.fromURLError(error)
+        } catch is DecodingError {
+            throw APIError.decodingError
+        } catch {
+            throw APIError.unknown(error.localizedDescription)
         }
-
-        return try JSONDecoder().decode(DailySummary.self, from: data)
     }
 
     // MARK: - Samples
@@ -102,15 +133,28 @@ actor APIClient {
             throw APIError.invalidURL
         }
 
-        let (data, response) = try await session.data(from: url)
+        do {
+            let (data, response) = try await session.data(from: url)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.serverError
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw APIError.serverError(0)
+            }
+
+            guard (200...299).contains(httpResponse.statusCode) else {
+                throw APIError.serverError(httpResponse.statusCode)
+            }
+
+            let result = try JSONDecoder().decode(SamplesResponse.self, from: data)
+            return result.samples
+        } catch let error as APIError {
+            throw error
+        } catch let error as URLError {
+            throw APIError.fromURLError(error)
+        } catch is DecodingError {
+            throw APIError.decodingError
+        } catch {
+            throw APIError.unknown(error.localizedDescription)
         }
-
-        let result = try JSONDecoder().decode(SamplesResponse.self, from: data)
-        return result.samples
     }
 
 }
@@ -119,17 +163,53 @@ actor APIClient {
 
 enum APIError: Error, LocalizedError {
     case invalidURL
-    case serverError
+    case serverError(Int)
     case decodingError
+    case connectionRefused
+    case networkUnavailable
+    case timeout
+    case hostNotFound
+    case unknown(String)
 
     var errorDescription: String? {
         switch self {
         case .invalidURL:
-            return "Invalid server URL"
-        case .serverError:
-            return "Server error occurred"
+            return "Invalid server URL. Check settings."
+        case .serverError(let code):
+            if code == 404 {
+                return "Server endpoint not found (404)"
+            } else if code >= 500 {
+                return "Server error (\(code)). Is the server running?"
+            } else {
+                return "Server error (\(code))"
+            }
         case .decodingError:
-            return "Failed to decode response"
+            return "Invalid response from server"
+        case .connectionRefused:
+            return "Connection refused. Is the server running?"
+        case .networkUnavailable:
+            return "No network connection"
+        case .timeout:
+            return "Connection timed out. Check server address."
+        case .hostNotFound:
+            return "Server not found. Check the IP address."
+        case .unknown(let message):
+            return message
+        }
+    }
+
+    static func fromURLError(_ error: URLError) -> APIError {
+        switch error.code {
+        case .timedOut:
+            return .timeout
+        case .cannotConnectToHost, .networkConnectionLost:
+            return .connectionRefused
+        case .notConnectedToInternet:
+            return .networkUnavailable
+        case .cannotFindHost, .dnsLookupFailed:
+            return .hostNotFound
+        default:
+            return .unknown(error.localizedDescription)
         }
     }
 }
