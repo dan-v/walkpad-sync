@@ -90,7 +90,10 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         let speed_kmh = raw_speed as f64 / 100.0;
         let speed_ms = speed_kmh / 3.6; // km/h to m/s
         result.speed = Some(speed_ms);
-        debug!("FTMS SPEED: raw={} ({:.2} km/h = {:.2} m/s)", raw_speed, speed_kmh, speed_ms);
+        debug!(
+            "FTMS SPEED: raw={} ({:.2} km/h = {:.2} m/s)",
+            raw_speed, speed_kmh, speed_ms
+        );
         offset += 2;
     }
 
@@ -100,7 +103,8 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
         if data.len() < offset + 3 {
             return Err(anyhow!("Not enough data for total distance"));
         }
-        let raw_distance = u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], 0]);
+        let raw_distance =
+            u32::from_le_bytes([data[offset], data[offset + 1], data[offset + 2], 0]);
         result.distance = Some(raw_distance); // already in meters
         debug!("FTMS DISTANCE: {} meters", raw_distance);
         offset += 3;
@@ -223,25 +227,29 @@ pub fn parse_treadmill_data(data: &[u8]) -> Result<TreadmillData> {
 
     // Validate parsed data for sanity
     if let Some(speed) = result.speed {
-        if speed < 0.0 || speed > 50.0 {  // 50 m/s = 180 km/h (impossible for treadmill)
+        if speed < 0.0 || speed > 50.0 {
+            // 50 m/s = 180 km/h (impossible for treadmill)
             return Err(anyhow!("Invalid speed: {} m/s", speed));
         }
     }
 
     if let Some(incline) = result.incline {
-        if incline < -15.0 || incline > 40.0 {  // Reasonable treadmill limits
+        if incline < -15.0 || incline > 40.0 {
+            // Reasonable treadmill limits
             return Err(anyhow!("Invalid incline: {}%", incline));
         }
     }
 
     if let Some(hr) = result.heart_rate {
-        if hr == 0 || hr > 220 {  // Invalid heart rate
-            result.heart_rate = None;  // Discard invalid HR
+        if hr == 0 || hr > 220 {
+            // Invalid heart rate
+            result.heart_rate = None; // Discard invalid HR
         }
     }
 
     if let Some(distance) = result.distance {
-        if distance > 1_000_000 {  // 1000 km seems like a reasonable max
+        if distance > 1_000_000 {
+            // 1000 km seems like a reasonable max
             return Err(anyhow!("Invalid distance: {} meters", distance));
         }
     }
@@ -270,10 +278,7 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
     let mut result = TreadmillData::default();
 
     // Log raw response
-    debug!(
-        "LifeSpan response for {:?}: bytes={:02X?}",
-        query, data
-    );
+    debug!("LifeSpan response for {:?}: bytes={:02X?}", query, data);
 
     // Response format:
     // bytes[0] = 0xA1 (command echo)
@@ -342,8 +347,10 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             let calories = u16::from_be_bytes([data[2], data[3]]);
 
             result.total_energy = Some(calories);
-            debug!("LifeSpan calories: {} kcal (raw bytes: [0x{:02X}, 0x{:02X}])",
-                   calories, data[2], data[3]);
+            debug!(
+                "LifeSpan calories: {} kcal (raw bytes: [0x{:02X}, 0x{:02X}])",
+                calories, data[2], data[3]
+            );
         }
 
         LifeSpanQuery::Steps => {
@@ -351,14 +358,19 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
             // Response format: [A1, AA, HIGH_BYTE, LOW_BYTE, 00, 00]
             // Example: [A1, AA, 0x61, 0x88] = 0x6188 = 24968 steps
             if data.len() < 4 {
-                return Err(anyhow!("LifeSpan steps data too short: {} bytes", data.len()));
+                return Err(anyhow!(
+                    "LifeSpan steps data too short: {} bytes",
+                    data.len()
+                ));
             }
 
             // Parse as 16-bit big-endian from bytes[2] and bytes[3]
             let steps = u16::from_be_bytes([data[2], data[3]]);
 
-            debug!("LifeSpan steps: {} (raw bytes: [0x{:02X}, 0x{:02X}])",
-                   steps, data[2], data[3]);
+            debug!(
+                "LifeSpan steps: {} (raw bytes: [0x{:02X}, 0x{:02X}])",
+                steps, data[2], data[3]
+            );
 
             result.steps = Some(steps);
         }
@@ -375,7 +387,10 @@ pub fn parse_lifespan_response(data: &[u8], query: LifeSpanQuery) -> Result<Trea
                     // Use u32 for calculation and storage to support long workouts
                     let total_seconds = hours * 3600 + minutes * 60 + seconds;
                     result.elapsed_time = Some(total_seconds);
-                    debug!("LifeSpan time: {}h {}m {}s = {} seconds", hours, minutes, seconds, total_seconds);
+                    debug!(
+                        "LifeSpan time: {}h {}m {}s = {} seconds",
+                        hours, minutes, seconds, total_seconds
+                    );
                 } else {
                     debug!("Invalid time: {}:{}:{}", hours, minutes, seconds);
                 }
