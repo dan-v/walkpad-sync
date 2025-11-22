@@ -148,10 +148,4 @@ impl Config {
             }
         }
     }
-
-    pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
-        Ok(())
-    }
 }
