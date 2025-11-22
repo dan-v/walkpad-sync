@@ -68,7 +68,10 @@ pub struct HandshakeCommand {
 }
 
 /// Query command for polling-mode protocols
+///
+/// Note: HeartRate and Incline are included for future protocol support
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[allow(dead_code)]
 pub enum QueryType {
     Speed,
     Distance,

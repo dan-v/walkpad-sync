@@ -35,16 +35,6 @@ impl LifeSpanQuery {
             LifeSpanQuery::Time => [0xA1, 0x89, 0x00, 0x00, 0x00],
         }
     }
-
-    pub fn all_queries() -> [LifeSpanQuery; 5] {
-        [
-            LifeSpanQuery::Steps,
-            LifeSpanQuery::Distance,
-            LifeSpanQuery::Calories,
-            LifeSpanQuery::Speed,
-            LifeSpanQuery::Time,
-        ]
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -538,13 +528,5 @@ mod tests {
             LifeSpanQuery::Time.command(),
             [0xA1, 0x89, 0x00, 0x00, 0x00]
         );
-    }
-
-    #[test]
-    fn test_lifespan_all_queries_order() {
-        // Time should be last (used to mark end of polling cycle)
-        let queries = LifeSpanQuery::all_queries();
-        assert_eq!(queries.len(), 5);
-        assert_eq!(queries[4], LifeSpanQuery::Time);
     }
 }
