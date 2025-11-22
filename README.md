@@ -5,7 +5,7 @@ Sync your LifeSpan treadmill data to Apple Health.
 ## Overview
 
 - **Server** (`server/`) - Rust backend that connects to your treadmill via Bluetooth
-- **iOS App** (`TreadmillSync/`) - Syncs data to Apple Health
+- **iOS App** (`ios/`) - Syncs data to Apple Health
 
 ## Requirements
 

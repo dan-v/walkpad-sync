@@ -119,7 +119,7 @@
 				372677D72ECEDAD30017AC87 /* Services */,
 				372677E12ECEDAD30017AC87 /* Views */,
 			);
-			path = TreadmillSync;
+			path = ios;
 			sourceTree = "<group>";
 		};
 		EE000003 /* Products */ = {
@@ -343,13 +343,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = TreadmillSync/TreadmillSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/TreadmillSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TM2Q7CGVRH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = TreadmillSync/Info.plist;
+				INFOPLIST_FILE = ios/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "WalkPad Sync needs to read your health data to prevent duplicate workout entries.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WalkPad Sync saves your walking pad workout data to Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -376,13 +376,13 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = TreadmillSync/TreadmillSync.entitlements;
+				CODE_SIGN_ENTITLEMENTS = ios/TreadmillSync.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = TM2Q7CGVRH;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
-				INFOPLIST_FILE = TreadmillSync/Info.plist;
+				INFOPLIST_FILE = ios/Info.plist;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "WalkPad Sync needs to read your health data to prevent duplicate workout entries.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "WalkPad Sync saves your walking pad workout data to Apple Health.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
