@@ -5,7 +5,6 @@
 //!
 //! # Currently Supported Protocols
 //!
-//! - **FTMS Standard**: Bluetooth SIG Fitness Machine Service (passive notifications)
 //! - **LifeSpan Proprietary**: Polling-based protocol for LifeSpan TR1200-DT3 and similar
 //!
 //! # Adding Support for a New Treadmill Model
@@ -49,14 +48,14 @@ use btleplug::api::Characteristic;
 use std::fmt::Debug;
 use uuid::Uuid;
 
-use super::ftms::{LifeSpanQuery, TreadmillData, LIFESPAN_DATA_UUID, TREADMILL_DATA_UUID};
+use super::ftms::{LifeSpanQuery, TreadmillData, LIFESPAN_CHAR_UUID};
 
 /// Communication mode for the protocol
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ProtocolMode {
-    /// Device pushes notifications automatically (FTMS standard)
+    /// Device pushes notifications automatically
     Passive,
-    /// Need to poll the device for data (LifeSpan proprietary)
+    /// Need to poll the device for data
     Polling { interval_ms: u64 },
 }
 
@@ -122,18 +121,15 @@ pub trait TreadmillProtocol: Send + Sync + Debug {
 
 /// Detect the appropriate protocol based on available characteristics
 pub fn detect_protocol(characteristics: &[Characteristic]) -> Option<Box<dyn TreadmillProtocol>> {
-    // Try FTMS standard first (preferred)
-    if characteristics
-        .iter()
-        .any(|c| c.uuid == TREADMILL_DATA_UUID)
-    {
-        return Some(Box::new(FtmsProtocol));
-    }
-
-    // Try LifeSpan proprietary
-    if characteristics.iter().any(|c| c.uuid == LIFESPAN_DATA_UUID) {
+    // Try LifeSpan proprietary protocol
+    if characteristics.iter().any(|c| c.uuid == LIFESPAN_CHAR_UUID) {
         return Some(Box::new(LifeSpanProtocol));
     }
+
+    // Add detection for new protocols here:
+    // if characteristics.iter().any(|c| c.uuid == MY_TREADMILL_UUID) {
+    //     return Some(Box::new(MyTreadmillProtocol));
+    // }
 
     None
 }
@@ -141,37 +137,9 @@ pub fn detect_protocol(characteristics: &[Characteristic]) -> Option<Box<dyn Tre
 /// Get a list of all supported protocol UUIDs for logging
 pub fn supported_protocol_uuids() -> Vec<(Uuid, &'static str)> {
     vec![
-        (TREADMILL_DATA_UUID, "FTMS Standard"),
-        (LIFESPAN_DATA_UUID, "LifeSpan Proprietary"),
+        (LIFESPAN_CHAR_UUID, "LifeSpan Proprietary"),
         // Add new protocols here
     ]
-}
-
-// ============================================================================
-// FTMS Standard Protocol Implementation
-// ============================================================================
-
-/// FTMS (Fitness Machine Service) standard protocol
-/// Used by many modern treadmills that follow the Bluetooth SIG specification
-#[derive(Debug)]
-pub struct FtmsProtocol;
-
-impl TreadmillProtocol for FtmsProtocol {
-    fn name(&self) -> &'static str {
-        "FTMS Standard"
-    }
-
-    fn characteristic_uuid(&self) -> Uuid {
-        TREADMILL_DATA_UUID
-    }
-
-    fn mode(&self) -> ProtocolMode {
-        ProtocolMode::Passive
-    }
-
-    fn parse_data(&self, data: &[u8], _query: Option<QueryType>) -> Result<TreadmillData> {
-        super::ftms::parse_treadmill_data(data)
-    }
 }
 
 // ============================================================================
@@ -189,7 +157,7 @@ impl TreadmillProtocol for LifeSpanProtocol {
     }
 
     fn characteristic_uuid(&self) -> Uuid {
-        LIFESPAN_DATA_UUID
+        LIFESPAN_CHAR_UUID
     }
 
     fn mode(&self) -> ProtocolMode {
