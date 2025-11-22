@@ -19,6 +19,8 @@
 		372677EB2ECEDAD30017AC87 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677DC2ECEDAD30017AC87 /* ContentView.swift */; };
 		372677EC2ECEDAD30017AC87 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677DF2ECEDAD30017AC87 /* SettingsView.swift */; };
 		372677ED2ECEDAD30017AC87 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677D62ECEDAD30017AC87 /* HealthKitManager.swift */; };
+		372678122ED131690017AC87 /* SyncStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678102ED131690017AC87 /* SyncStateManager.swift */; };
+		372678132ED131690017AC87 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678112ED131690017AC87 /* WebSocketManager.swift */; };
 		AA000001 /* TreadmillSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* TreadmillSyncApp.swift */; };
 		BB000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000014 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -36,6 +38,8 @@
 		372677DE2ECEDAD30017AC87 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		372677DF2ECEDAD30017AC87 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		372677E02ECEDAD30017AC87 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
+		372678102ED131690017AC87 /* SyncStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStateManager.swift; sourceTree = "<group>"; };
+		372678112ED131690017AC87 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
 		BB000001 /* TreadmillSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TreadmillSyncApp.swift; sourceTree = "<group>"; };
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB000012 /* TreadmillSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = TreadmillSync.entitlements; sourceTree = "<group>"; };
@@ -69,6 +73,8 @@
 			children = (
 				372677D52ECEDAD30017AC87 /* APIClient.swift */,
 				372677D62ECEDAD30017AC87 /* HealthKitManager.swift */,
+				372678102ED131690017AC87 /* SyncStateManager.swift */,
+				372678112ED131690017AC87 /* WebSocketManager.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -203,6 +209,8 @@
 				372677E52ECEDAD30017AC87 /* APIClient.swift in Sources */,
 				372677E62ECEDAD30017AC87 /* ServerConfig.swift in Sources */,
 				372677E72ECEDAD30017AC87 /* OnboardingView.swift in Sources */,
+				372678122ED131690017AC87 /* SyncStateManager.swift in Sources */,
+				372678132ED131690017AC87 /* WebSocketManager.swift in Sources */,
 				372677E82ECEDAD30017AC87 /* StatCard.swift in Sources */,
 				372677E92ECEDAD30017AC87 /* ActivityListView.swift in Sources */,
 				372677EA2ECEDAD30017AC87 /* TodayView.swift in Sources */,
