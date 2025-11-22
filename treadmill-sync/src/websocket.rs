@@ -18,9 +18,7 @@ use crate::storage::TreadmillSample;
 #[serde(tag = "type")]
 pub enum WsMessage {
     /// A new sample has been added
-    NewSample {
-        sample: WsSample,
-    },
+    NewSample { sample: WsSample },
     /// Heartbeat to keep connection alive
     Heartbeat,
 }
@@ -48,10 +46,7 @@ impl From<TreadmillSample> for WsSample {
 }
 
 /// WebSocket handler
-pub async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+pub async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 

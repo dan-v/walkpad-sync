@@ -1,9 +1,7 @@
 pub mod ftms;
 
 use anyhow::{anyhow, Result};
-use btleplug::api::{
-    Central, Characteristic, Manager as _, Peripheral as _, ScanFilter,
-};
+use btleplug::api::{Central, Characteristic, Manager as _, Peripheral as _, ScanFilter};
 use btleplug::platform::{Adapter, Manager, Peripheral};
 use chrono::Utc;
 use futures_util::stream::StreamExt;
@@ -17,8 +15,8 @@ use crate::config::BluetoothConfig;
 use crate::storage::Storage;
 use crate::websocket::{broadcast_sample, WsMessage};
 use ftms::{
-    parse_treadmill_data, parse_lifespan_response, TreadmillData,
-    TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, LifeSpanQuery,
+    parse_lifespan_response, parse_treadmill_data, LifeSpanQuery, TreadmillData,
+    LIFESPAN_DATA_UUID, LIFESPAN_HANDSHAKE, TREADMILL_DATA_UUID,
 };
 
 #[derive(Debug, Clone)]
@@ -27,7 +25,7 @@ pub enum ConnectionStatus {
     Scanning,
     Connecting,
     Connected,
-    Error(String),
+    Error,
 }
 
 pub struct BluetoothManager {
@@ -49,20 +47,25 @@ impl BluetoothManager {
     ) -> (Self, broadcast::Receiver<ConnectionStatus>) {
         let (status_tx, status_rx) = broadcast::channel(16);
 
-        (Self {
-            storage,
-            config,
-            status_tx,
-            ws_tx,
-            last_distance: Arc::new(RwLock::new(None)),
-            last_calories: Arc::new(RwLock::new(None)),
-            last_steps: Arc::new(RwLock::new(None)),
-        }, status_rx)
+        (
+            Self {
+                storage,
+                config,
+                status_tx,
+                ws_tx,
+                last_distance: Arc::new(RwLock::new(None)),
+                last_calories: Arc::new(RwLock::new(None)),
+                last_steps: Arc::new(RwLock::new(None)),
+            },
+            status_rx,
+        )
     }
 
     pub async fn run(&self) -> Result<()> {
-        info!("Starting Bluetooth manager (scan_timeout={}s, reconnect_delay={}s)",
-              self.config.scan_timeout_secs, self.config.reconnect_delay_secs);
+        info!(
+            "Starting Bluetooth manager (scan_timeout={}s, reconnect_delay={}s)",
+            self.config.scan_timeout_secs, self.config.reconnect_delay_secs
+        );
         info!("🎯 Simple data capture mode - no workout detection, just raw samples");
 
         let mut reconnect_attempts = 0u32;
@@ -76,7 +79,7 @@ impl BluetoothManager {
                 Err(e) => {
                     reconnect_attempts += 1;
                     error!("Connection error (attempt #{}): {}", reconnect_attempts, e);
-                    let _ = self.status_tx.send(ConnectionStatus::Error(e.to_string()));
+                    let _ = self.status_tx.send(ConnectionStatus::Error);
                 }
             }
 
@@ -84,8 +87,11 @@ impl BluetoothManager {
             let _ = self.status_tx.send(ConnectionStatus::Disconnected);
 
             // Wait before reconnecting
-            info!("Reconnecting in {} seconds (attempt #{})...",
-                  self.config.reconnect_delay_secs, reconnect_attempts + 1);
+            info!(
+                "Reconnecting in {} seconds (attempt #{})...",
+                self.config.reconnect_delay_secs,
+                reconnect_attempts + 1
+            );
             sleep(Duration::from_secs(self.config.reconnect_delay_secs)).await;
         }
     }
@@ -94,7 +100,10 @@ impl BluetoothManager {
         // Get BLE adapter
         let manager = Manager::new().await?;
         let adapters = manager.adapters().await?;
-        let adapter = adapters.into_iter().next().ok_or_else(|| anyhow!("No BLE adapter found"))?;
+        let adapter = adapters
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("No BLE adapter found"))?;
 
         // Scan for device
         info!("Scanning for treadmill: {}", self.config.device_name_filter);
@@ -116,8 +125,10 @@ impl BluetoothManager {
         // Log all discovered services and characteristics for debugging
         info!("Discovered {} characteristics on treadmill", chars.len());
         for (i, char) in chars.iter().enumerate() {
-            debug!("  [{}] Service: {}, Characteristic: {}, Properties: {:?}",
-                   i, char.service_uuid, char.uuid, char.properties);
+            debug!(
+                "  [{}] Service: {}, Characteristic: {}, Properties: {:?}",
+                i, char.service_uuid, char.uuid, char.properties
+            );
         }
 
         // Try to find FTMS characteristic first, then fall back to LifeSpan proprietary
@@ -129,17 +140,25 @@ impl BluetoothManager {
                 chars.iter().find(|c| c.uuid == LIFESPAN_DATA_UUID)
             })
             .ok_or_else(|| {
-                warn!("Neither FTMS (UUID: {}) nor LifeSpan (UUID: {}) characteristic found",
-                      TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID);
+                warn!(
+                    "Neither FTMS (UUID: {}) nor LifeSpan (UUID: {}) characteristic found",
+                    TREADMILL_DATA_UUID, LIFESPAN_DATA_UUID
+                );
                 warn!("Your treadmill may use a different protocol");
                 warn!("Check the characteristic list above to see what your treadmill exposes");
                 anyhow!("Treadmill data characteristic not found")
             })?;
 
         if treadmill_char.uuid == LIFESPAN_DATA_UUID {
-            info!("Using LifeSpan proprietary protocol (UUID: {})", LIFESPAN_DATA_UUID);
+            info!(
+                "Using LifeSpan proprietary protocol (UUID: {})",
+                LIFESPAN_DATA_UUID
+            );
         } else {
-            info!("Using standard FTMS protocol (UUID: {})", TREADMILL_DATA_UUID);
+            info!(
+                "Using standard FTMS protocol (UUID: {})",
+                TREADMILL_DATA_UUID
+            );
         }
 
         // Subscribe to notifications
@@ -148,10 +167,20 @@ impl BluetoothManager {
 
         // Send handshake if using LifeSpan protocol
         if treadmill_char.uuid == LIFESPAN_DATA_UUID {
-            info!("Sending LifeSpan handshake sequence ({} commands)...", LIFESPAN_HANDSHAKE.len());
+            info!(
+                "Sending LifeSpan handshake sequence ({} commands)...",
+                LIFESPAN_HANDSHAKE.len()
+            );
             for (i, cmd) in LIFESPAN_HANDSHAKE.iter().enumerate() {
-                peripheral.write(treadmill_char, cmd, btleplug::api::WriteType::WithResponse).await?;
-                debug!("Sent handshake command {}/{}: {:02X?}", i + 1, LIFESPAN_HANDSHAKE.len(), cmd);
+                peripheral
+                    .write(treadmill_char, cmd, btleplug::api::WriteType::WithResponse)
+                    .await?;
+                debug!(
+                    "Sent handshake command {}/{}: {:02X?}",
+                    i + 1,
+                    LIFESPAN_HANDSHAKE.len(),
+                    cmd
+                );
                 sleep(Duration::from_millis(100)).await;
             }
             info!("Handshake complete");
@@ -160,7 +189,8 @@ impl BluetoothManager {
         let _ = self.status_tx.send(ConnectionStatus::Connected);
 
         // Monitor notifications (will poll for LifeSpan or passively listen for FTMS)
-        self.monitor_notifications(&peripheral, treadmill_char).await?;
+        self.monitor_notifications(&peripheral, treadmill_char)
+            .await?;
 
         Ok(())
     }
@@ -170,7 +200,8 @@ impl BluetoothManager {
 
         // Scan for configured timeout
         let timeout = self.config.scan_timeout_secs;
-        let mut discovered_devices: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut discovered_devices: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
 
         for i in 0..timeout {
             sleep(Duration::from_secs(1)).await;
@@ -181,7 +212,10 @@ impl BluetoothManager {
                     if let Some(name) = props.local_name {
                         // Log all discovered devices for debugging
                         if discovered_devices.insert(name.clone()) {
-                            debug!("Discovered BLE device: '{}' (address: {:?})", name, props.address);
+                            debug!(
+                                "Discovered BLE device: '{}' (address: {:?})",
+                                name, props.address
+                            );
                         }
 
                         if name.contains(&self.config.device_name_filter) {
@@ -200,21 +234,29 @@ impl BluetoothManager {
         if discovered_devices.is_empty() {
             warn!("No BLE devices discovered at all. Is Bluetooth enabled and are there devices nearby?");
         } else {
-            warn!("Treadmill not found. Discovered {} device(s): {:?}",
-                  discovered_devices.len(),
-                  discovered_devices.iter().collect::<Vec<_>>());
+            warn!(
+                "Treadmill not found. Discovered {} device(s): {:?}",
+                discovered_devices.len(),
+                discovered_devices.iter().collect::<Vec<_>>()
+            );
             warn!("Hint: Update device_name_filter in config.toml to match your treadmill's name");
         }
 
         Err(anyhow!("Treadmill not found after {} seconds", timeout))
     }
 
-    async fn monitor_notifications(&self, peripheral: &Peripheral, char: &Characteristic) -> Result<()> {
+    async fn monitor_notifications(
+        &self,
+        peripheral: &Peripheral,
+        char: &Characteristic,
+    ) -> Result<()> {
         let mut notification_stream = peripheral.notifications().await?;
         let mut sample_count = 0;
 
         // For LifeSpan protocol: track pending queries with shared queue
-        let pending_queries = Arc::new(RwLock::new(std::collections::VecDeque::<LifeSpanQuery>::new()));
+        let pending_queries = Arc::new(RwLock::new(
+            std::collections::VecDeque::<LifeSpanQuery>::new(),
+        ));
         let is_lifespan = char.uuid == LIFESPAN_DATA_UUID;
 
         // For LifeSpan: accumulate responses from all 5 queries into complete samples
@@ -241,8 +283,12 @@ impl BluetoothManager {
                 loop {
                     for query in &queries {
                         let cmd = query.command();
-                        if let Err(e) = peripheral.write(&char, &cmd, btleplug::api::WriteType::WithResponse).await {
-                            let error_msg = format!("Failed to write LifeSpan query {:?}: {}", query, e);
+                        if let Err(e) = peripheral
+                            .write(&char, &cmd, btleplug::api::WriteType::WithResponse)
+                            .await
+                        {
+                            let error_msg =
+                                format!("Failed to write LifeSpan query {:?}: {}", query, e);
                             error!("{}", error_msg);
                             // Signal the main loop that we've encountered an error
                             let _ = error_tx.send(error_msg).await;
@@ -401,20 +447,16 @@ impl BluetoothManager {
 
             // Check if we're still connected
             if !peripheral.is_connected().await? {
-                warn!("Lost connection to treadmill after {} samples", sample_count);
+                warn!(
+                    "Lost connection to treadmill after {} samples",
+                    sample_count
+                );
                 if let Some(task) = poll_task.take() {
                     task.abort();
                 }
                 return Err(anyhow!("Connection lost"));
             }
         }
-
-        // Cancel polling task if it exists (unlikely to reach here but good for cleanup)
-        if let Some(task) = poll_task.take() {
-            task.abort();
-        }
-
-        Ok(())
     }
 
     async fn record_sample(&self, data: &TreadmillData) -> Result<()> {
@@ -499,16 +541,18 @@ impl BluetoothManager {
         }
 
         // Store both raw cumulative values (for debugging) and deltas (for queries)
-        self.storage.add_sample(
-            timestamp,
-            data.speed,
-            data.distance.map(|d| d as i64),
-            data.total_energy.map(|e| e as i64),
-            data.steps.map(|s| s as i64),
-            distance_delta,
-            calories_delta,
-            steps_delta,
-        ).await?;
+        self.storage
+            .add_sample(
+                timestamp,
+                data.speed,
+                data.distance.map(|d| d as i64),
+                data.total_energy.map(|e| e as i64),
+                data.steps.map(|s| s as i64),
+                distance_delta,
+                calories_delta,
+                steps_delta,
+            )
+            .await?;
 
         // Broadcast to WebSocket clients
         let sample = crate::storage::TreadmillSample {

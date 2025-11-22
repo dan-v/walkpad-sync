@@ -29,13 +29,11 @@ pub fn create_router(state: AppState) -> Router {
         .route("/dashboard", get(serve_dashboard))
         .route("/api/health", get(health_check))
         .route("/api/dates", get(get_activity_dates))
+        .route("/api/dates/summaries", get(get_all_summaries))
         .route("/api/dates/:date/summary", get(get_date_summary))
         .route("/api/dates/:date/samples", get(get_date_samples))
         .route("/api/samples", get(get_samples_by_range))
         .route("/api/stats", get(get_stats))
-        // Alias routes for dashboard compatibility
-        .route("/api/activity/dates", get(get_activity_dates))
-        .route("/api/activity/summary/:date", get(get_date_summary))
         .route("/ws/live", get(crate::websocket::ws_handler))
         .with_state(state)
 }
@@ -56,25 +54,43 @@ async fn health_check() -> impl IntoResponse {
 // Get all dates with activity
 #[derive(Debug, Serialize)]
 struct ActivityDatesResponse {
-    dates: Vec<String>,  // YYYY-MM-DD format
+    dates: Vec<String>, // YYYY-MM-DD format
 }
 
 #[derive(Debug, Deserialize)]
 struct TimezoneQuery {
     #[serde(default)]
-    tz_offset: Option<i32>,  // Timezone offset in seconds (e.g., -28800 for PST/UTC-8)
+    tz_offset: Option<i32>, // Timezone offset in seconds (e.g., -28800 for PST/UTC-8)
 }
 
 async fn get_activity_dates(
     State(state): State<AppState>,
     Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<ActivityDatesResponse>, ApiError> {
-    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
+    let tz_offset = query.tz_offset.unwrap_or(0); // Default to UTC
     info!("Getting all activity dates (tz_offset={})", tz_offset);
 
     let dates = state.storage.get_activity_dates(tz_offset).await?;
 
     Ok(Json(ActivityDatesResponse { dates }))
+}
+
+// Get all summaries at once (single query instead of N+1)
+#[derive(Debug, Serialize)]
+struct AllSummariesResponse {
+    summaries: Vec<DailySummary>,
+}
+
+async fn get_all_summaries(
+    State(state): State<AppState>,
+    Query(query): Query<TimezoneQuery>,
+) -> Result<Json<AllSummariesResponse>, ApiError> {
+    let tz_offset = query.tz_offset.unwrap_or(0);
+    info!("Getting all daily summaries (tz_offset={})", tz_offset);
+
+    let summaries = state.storage.get_all_daily_summaries(tz_offset).await?;
+
+    Ok(Json(AllSummariesResponse { summaries }))
 }
 
 // Get daily summary for a specific date
@@ -84,14 +100,20 @@ async fn get_date_summary(
     Query(query): Query<TimezoneQuery>,
 ) -> Result<Json<DailySummary>, ApiError> {
     let date = validate_date(&date_str)?;
-    let tz_offset = query.tz_offset.unwrap_or(0);  // Default to UTC
-    info!("Getting summary for date: {} (tz_offset={})", date_str, tz_offset);
+    let tz_offset = query.tz_offset.unwrap_or(0); // Default to UTC
+    info!(
+        "Getting summary for date: {} (tz_offset={})",
+        date_str, tz_offset
+    );
 
     let summary = state.storage.get_daily_summary(date, tz_offset).await?;
 
     match summary {
         Some(s) => Ok(Json(s)),
-        None => Err(ApiError::NotFound(format!("No activity found for date: {}", date_str))),
+        None => Err(ApiError::NotFound(format!(
+            "No activity found for date: {}",
+            date_str
+        ))),
     }
 }
 
@@ -104,14 +126,14 @@ struct SamplesResponse {
 
 #[derive(Debug, Serialize)]
 struct SampleResponse {
-    timestamp: i64,           // Unix epoch
-    speed: Option<f64>,       // m/s
-    distance_total: Option<i64>,  // Cumulative (for debugging)
-    calories_total: Option<i64>,  // Cumulative (for debugging)
-    steps_total: Option<i64>,     // Cumulative (for debugging)
-    distance_delta: Option<i64>,  // Delta since last sample (USE THIS!)
-    calories_delta: Option<i64>,  // Delta since last sample (USE THIS!)
-    steps_delta: Option<i64>,     // Delta since last sample (USE THIS!)
+    timestamp: i64,              // Unix epoch
+    speed: Option<f64>,          // m/s
+    distance_total: Option<i64>, // Cumulative (for debugging)
+    calories_total: Option<i64>, // Cumulative (for debugging)
+    steps_total: Option<i64>,    // Cumulative (for debugging)
+    distance_delta: Option<i64>, // Delta since last sample (USE THIS!)
+    calories_delta: Option<i64>, // Delta since last sample (USE THIS!)
+    steps_delta: Option<i64>,    // Delta since last sample (USE THIS!)
 }
 
 impl From<TreadmillSample> for SampleResponse {
@@ -136,12 +158,18 @@ async fn get_date_samples(
 ) -> Result<Json<SamplesResponse>, ApiError> {
     let date = validate_date(&date_str)?;
     let tz_offset = query.tz_offset.unwrap_or(0);
-    info!("Getting samples for date: {} with tz_offset: {}", date_str, tz_offset);
+    info!(
+        "Getting samples for date: {} with tz_offset: {}",
+        date_str, tz_offset
+    );
 
     let samples = state.storage.get_samples_for_date(date, tz_offset).await?;
 
     if samples.is_empty() {
-        return Err(ApiError::NotFound(format!("No samples found for date: {}", date_str)));
+        return Err(ApiError::NotFound(format!(
+            "No samples found for date: {}",
+            date_str
+        )));
     }
 
     let samples: Vec<SampleResponse> = samples.into_iter().map(SampleResponse::from).collect();
@@ -155,8 +183,8 @@ async fn get_date_samples(
 // Get samples by date range (for bulk queries)
 #[derive(Debug, Deserialize)]
 struct SamplesRangeQuery {
-    start_date: String,  // YYYY-MM-DD
-    end_date: String,    // YYYY-MM-DD
+    start_date: String, // YYYY-MM-DD
+    end_date: String,   // YYYY-MM-DD
 }
 
 async fn get_samples_by_range(
@@ -169,20 +197,28 @@ async fn get_samples_by_range(
     // Validate range
     let days_diff = (end_date - start_date).num_days();
     if days_diff < 0 {
-        return Err(ApiError::Validation(ValidationError::new("start_date must be before end_date")));
-    }
-    if days_diff > MAX_DATE_RANGE_DAYS {
         return Err(ApiError::Validation(ValidationError::new(
-            format!("Date range too large (max {} days)", MAX_DATE_RANGE_DAYS)
+            "start_date must be before end_date",
         )));
     }
+    if days_diff > MAX_DATE_RANGE_DAYS {
+        return Err(ApiError::Validation(ValidationError::new(format!(
+            "Date range too large (max {} days)",
+            MAX_DATE_RANGE_DAYS
+        ))));
+    }
 
-    info!("Getting samples from {} to {}", query.start_date, query.end_date);
+    info!(
+        "Getting samples from {} to {}",
+        query.start_date, query.end_date
+    );
 
-    let start = start_date.and_hms_opt(0, 0, 0)
+    let start = start_date
+        .and_hms_opt(0, 0, 0)
         .ok_or_else(|| ApiError::Validation(ValidationError::new("Invalid start date time")))?
         .and_utc();
-    let end = end_date.and_hms_opt(23, 59, 59)
+    let end = end_date
+        .and_hms_opt(23, 59, 59)
         .ok_or_else(|| ApiError::Validation(ValidationError::new("Invalid end date time")))?
         .and_utc();
 
@@ -203,17 +239,14 @@ struct StatsResponse {
     server_time: String,
 }
 
-async fn get_stats(
-    State(state): State<AppState>,
-) -> Result<Json<StatsResponse>, ApiError> {
+async fn get_stats(State(state): State<AppState>) -> Result<Json<StatsResponse>, ApiError> {
     info!("Getting stats");
 
     let total_samples = state.storage.get_total_sample_count().await?;
     let latest_sample = state.storage.get_latest_sample().await?;
 
     let latest_sample_time = latest_sample.and_then(|s| {
-        chrono::DateTime::<Utc>::from_timestamp(s.timestamp, 0)
-            .map(|dt| dt.to_rfc3339())
+        chrono::DateTime::<Utc>::from_timestamp(s.timestamp, 0).map(|dt| dt.to_rfc3339())
     });
 
     Ok(Json(StatsResponse {
