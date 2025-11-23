@@ -1,4 +1,5 @@
 import SwiftUI
+import Network
 
 struct OnboardingView: View {
     @Binding var hasCompletedOnboarding: Bool
@@ -61,6 +62,24 @@ struct OnboardingView: View {
                         )
                     }
                     .padding(.horizontal)
+
+                    // Network permission notice
+                    VStack(spacing: 8) {
+                        Divider()
+                            .padding(.horizontal, 32)
+
+                        HStack(spacing: 12) {
+                            Image(systemName: "info.circle.fill")
+                                .foregroundColor(.blue)
+                                .font(.title3)
+                            Text("On the next screen, you'll be asked to allow local network access to connect to your server")
+                                .font(.subheadline)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .padding(.horizontal, 32)
+                    }
+
                     Spacer()
                 }
                 .tag(1)
@@ -155,28 +174,36 @@ struct OnboardingView: View {
             }
             .tabViewStyle(.page)
             .indexViewStyle(.page(backgroundDisplayMode: .always))
+            .onChange(of: currentPage) { _, newPage in
+                // Trigger local network permission when user navigates to server setup page
+                if newPage == 2 {
+                    requestLocalNetworkPermission()
+                }
+            }
 
             // Continue/Done button
-            Button {
-                if currentPage < 2 {
-                    withAnimation {
-                        currentPage += 1
+            // On server setup page, only show after successful connection test
+            if shouldShowBottomButton {
+                Button {
+                    if currentPage < 2 {
+                        withAnimation {
+                            currentPage += 1
+                        }
+                    } else {
+                        saveConfigAndFinish()
                     }
-                } else {
-                    saveConfigAndFinish()
+                } label: {
+                    Text(buttonTitle)
+                        .fontWeight(.semibold)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundColor(.white)
+                        .cornerRadius(12)
                 }
-            } label: {
-                Text(buttonTitle)
-                    .fontWeight(.semibold)
-                    .frame(maxWidth: .infinity)
-                    .padding()
-                    .background(buttonEnabled ? Color.blue : Color.gray)
-                    .foregroundColor(.white)
-                    .cornerRadius(12)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 40)
             }
-            .disabled(!buttonEnabled)
-            .padding(.horizontal, 40)
-            .padding(.bottom, 40)
         }
         .interactiveDismissDisabled()
         .onAppear {
@@ -190,27 +217,39 @@ struct OnboardingView: View {
         }
     }
 
-    private var buttonTitle: String {
-        switch currentPage {
-        case 2:
-            return connectionTestResult.isSuccess ? "Get Started" : "Test Connection First"
-        default:
-            return "Continue"
+    private var shouldShowBottomButton: Bool {
+        if currentPage < 2 {
+            // Always show on pages before server setup
+            return true
+        } else {
+            // On server setup page, only show after successful test
+            return connectionTestResult.isSuccess
         }
     }
 
-    private var buttonEnabled: Bool {
-        switch currentPage {
-        case 2:
-            return connectionTestResult.isSuccess
-        default:
-            return true
-        }
+    private var buttonTitle: String {
+        currentPage < 2 ? "Continue" : "Get Started"
     }
 
     private var canTestConnection: Bool {
         !serverHost.trimmingCharacters(in: .whitespaces).isEmpty &&
         Int(serverPort) != nil
+    }
+
+    private func requestLocalNetworkPermission() {
+        // Trigger local network permission by attempting connection to local address
+        // This prompts the user early, before they try to connect to their server
+        let connection = NWConnection(
+            host: "224.0.0.251", // mDNS multicast address
+            port: 5353,
+            using: .udp
+        )
+        connection.start(queue: .global())
+
+        // Cancel after a brief moment - we just want to trigger the permission
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.1) {
+            connection.cancel()
+        }
     }
 
     private func testConnection() {
