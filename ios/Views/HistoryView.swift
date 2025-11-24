@@ -72,6 +72,12 @@ struct HistoryView: View {
                 await viewModel.loadData()
             }
         }
+        .onAppear {
+            // Refresh data when tab becomes visible
+            Task {
+                await viewModel.loadData()
+            }
+        }
         .task {
             await viewModel.loadData()
         }

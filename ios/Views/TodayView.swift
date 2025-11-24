@@ -163,6 +163,12 @@ struct TodayView: View {
                 await viewModel.loadData()
             }
         }
+        .onAppear {
+            // Refresh data when tab becomes visible
+            Task {
+                await viewModel.loadData(showLoading: false)
+            }
+        }
         .task {
             // Connect to WebSocket for live updates
             await viewModel.connectWebSocket()
@@ -390,7 +396,8 @@ class TodayViewModel: ObservableObject {
             let newSteps = newSummary?.steps ?? 0
 
             // If steps increased since last fetch, update last change time
-            if newSteps > previousSteps {
+            // But skip the first load (when previousSteps is still 0) to avoid false positive
+            if newSteps > previousSteps && previousSteps > 0 {
                 lastStepsChangeTime = Date()
             }
 
