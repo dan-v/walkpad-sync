@@ -4,23 +4,24 @@ struct ContentView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
 
     var body: some View {
-        TabView {
-            TodayView()
-                .tabItem {
-                    Label("Today", systemImage: "calendar.badge.clock")
-                }
+        if hasCompletedOnboarding {
+            TabView {
+                TodayView()
+                    .tabItem {
+                        Label("Today", systemImage: "calendar.badge.clock")
+                    }
 
-            HistoryView()
-                .tabItem {
-                    Label("History", systemImage: "calendar")
-                }
+                HistoryView()
+                    .tabItem {
+                        Label("History", systemImage: "calendar")
+                    }
 
-            SettingsView()
-                .tabItem {
-                    Label("Settings", systemImage: "gearshape")
-                }
-        }
-        .sheet(isPresented: .constant(!hasCompletedOnboarding)) {
+                SettingsView()
+                    .tabItem {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+            }
+        } else {
             OnboardingView(hasCompletedOnboarding: $hasCompletedOnboarding)
         }
     }
