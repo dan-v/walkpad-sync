@@ -1,0 +1,5 @@
+name = "demo-active"
+main = "worker-active.js"
+compatibility_date = "2024-01-01"
+
+# Active workout - steps increment in real-time

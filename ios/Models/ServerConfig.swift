@@ -1,5 +1,9 @@
 import Foundation
 
+extension Notification.Name {
+    static let serverConfigDidChange = Notification.Name("serverConfigDidChange")
+}
+
 struct ServerConfig: Codable {
     var host: String
     var port: Int
@@ -31,5 +35,10 @@ struct ServerConfig: Codable {
         if let data = try? JSONEncoder().encode(self) {
             UserDefaults.standard.set(data, forKey: Self.storageKey)
         }
+    }
+
+    func saveAndNotify() {
+        save()
+        NotificationCenter.default.post(name: .serverConfigDidChange, object: nil)
     }
 }

@@ -20,6 +20,7 @@
 		372677ED2ECEDAD30017AC87 /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372677D62ECEDAD30017AC87 /* HealthKitManager.swift */; };
 		372678122ED131690017AC87 /* SyncStateManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678102ED131690017AC87 /* SyncStateManager.swift */; };
 		372678132ED131690017AC87 /* WebSocketManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 372678112ED131690017AC87 /* WebSocketManager.swift */; };
+		375A554F2ED56BF800EBAA54 /* UnitPreference.swift in Sources */ = {isa = PBXBuildFile; fileRef = 375A554E2ED56BF800EBAA54 /* UnitPreference.swift */; };
 		AA000001 /* WalkPadSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = BB000001 /* WalkPadSyncApp.swift */; };
 		BB000015 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = BB000014 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -38,6 +39,7 @@
 		372677E02ECEDAD30017AC87 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		372678102ED131690017AC87 /* SyncStateManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStateManager.swift; sourceTree = "<group>"; };
 		372678112ED131690017AC87 /* WebSocketManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebSocketManager.swift; sourceTree = "<group>"; };
+		375A554E2ED56BF800EBAA54 /* UnitPreference.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnitPreference.swift; sourceTree = "<group>"; };
 		BB000001 /* WalkPadSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalkPadSyncApp.swift; sourceTree = "<group>"; };
 		BB000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		BB000012 /* WalkPadSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = WalkPadSync.entitlements; sourceTree = "<group>"; };
@@ -62,6 +64,7 @@
 			children = (
 				372677D22ECEDAD30017AC87 /* ServerConfig.swift */,
 				372677D32ECEDAD30017AC87 /* Workout.swift */,
+				375A554E2ED56BF800EBAA54 /* UnitPreference.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -102,12 +105,12 @@
 		EE000001 = {
 			isa = PBXGroup;
 			children = (
-				EE000002 /* WalkPadSync */,
+				EE000002 /* ios */,
 				EE000003 /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		EE000002 /* WalkPadSync */ = {
+		EE000002 /* ios */ = {
 			isa = PBXGroup;
 			children = (
 				BB000001 /* WalkPadSyncApp.swift */,
@@ -203,6 +206,7 @@
 				372677E22ECEDAD30017AC87 /* ActivityDetailView.swift in Sources */,
 				372677E32ECEDAD30017AC87 /* Workout.swift in Sources */,
 				372677E42ECEDAD30017AC87 /* HistoryView.swift in Sources */,
+				375A554F2ED56BF800EBAA54 /* UnitPreference.swift in Sources */,
 				372677E52ECEDAD30017AC87 /* APIClient.swift in Sources */,
 				372677E62ECEDAD30017AC87 /* ServerConfig.swift in Sources */,
 				372677E72ECEDAD30017AC87 /* OnboardingView.swift in Sources */,

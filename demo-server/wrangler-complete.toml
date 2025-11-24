@@ -1,0 +1,5 @@
+name = "demo-complete"
+main = "worker-complete.js"
+compatibility_date = "2024-01-01"
+
+# Completed workout - today has data but doesn't increment

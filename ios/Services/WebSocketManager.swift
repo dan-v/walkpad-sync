@@ -51,12 +51,10 @@ actor WebSocketManager {
         }
 
         guard let wsURL = URL(string: wsURLString) else {
-            print("❌ Invalid WebSocket URL: \(wsURLString)")
             connectionStatusSubject.send(.error("Invalid server URL"))
             return
         }
 
-        print("🔌 Connecting to WebSocket: \(wsURL.absoluteString)")
         connectionStatusSubject.send(.connecting)
 
         // Create WebSocket task
@@ -83,7 +81,6 @@ actor WebSocketManager {
     private func closeConnection() {
         guard let task = webSocketTask else { return }
 
-        print("🔌 Closing WebSocket connection")
         task.cancel(with: .goingAway, reason: nil)
         webSocketTask = nil
         isConnected = false
@@ -105,7 +102,6 @@ actor WebSocketManager {
                 if isFirstMessage {
                     isFirstMessage = false
                     connectionStatusSubject.send(.connected)
-                    print("✅ WebSocket connected (received first message)")
                 }
 
                 switch message {
@@ -122,7 +118,11 @@ actor WebSocketManager {
                 }
             }
         } catch {
-            print("❌ WebSocket receive error: \(error)")
+            // Suppress -1011 errors (server doesn't support WebSocket upgrades)
+            let nsError = error as NSError
+            if nsError.domain != NSURLErrorDomain || nsError.code != -1011 {
+                print("❌ WebSocket receive error: \(error)")
+            }
             handleDisconnection(error: error)
         }
     }
@@ -155,7 +155,6 @@ actor WebSocketManager {
         closeConnection()
 
         if shouldReconnect {
-            print("🔄 Attempting to reconnect in 5 seconds...")
             connectionStatusSubject.send(.error("Disconnected, reconnecting..."))
 
             Task {

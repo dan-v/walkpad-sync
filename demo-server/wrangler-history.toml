@@ -1,0 +1,5 @@
+name = "demo-history"
+main = "worker-history.js"
+compatibility_date = "2024-01-01"
+
+# History only - no data for today

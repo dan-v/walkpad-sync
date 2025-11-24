@@ -1,5 +1,6 @@
-// WalkPad Sync Demo API - Cloudflare Worker
-// Deploy: npx wrangler deploy
+// WalkPad Sync Demo API - ACTIVE WORKOUT
+// Steps increment in real-time to simulate active walking
+// Deploy: npx wrangler deploy --config wrangler-active.toml
 
 // Seeded random for consistent data (deterministic based on date string)
 function seededRandom(seed) {
@@ -10,8 +11,6 @@ function seededRandom(seed) {
 // Get "today" in user's timezone based on tz_offset parameter
 function getUserToday(tzOffsetSeconds) {
   const now = new Date();
-  // tz_offset is seconds from GMT (e.g., PDT is -25200 = -7 hours)
-  // Add the offset to get user's local time
   const userTime = new Date(now.getTime() + tzOffsetSeconds * 1000);
   return userTime.toISOString().split('T')[0];
 }
@@ -27,12 +26,8 @@ function formatDate(date) {
 // Generate mock data for 60 days ending at userToday
 function generateMockData(userToday, tzOffsetSeconds = 0) {
   const summaries = [];
-
-  // Parse userToday
   const [year, month, day] = userToday.split('-').map(Number);
   const todayDate = new Date(Date.UTC(year, month - 1, day, 12, 0, 0));
-
-  // Base seed from the date for consistency
   const baseSeed = year * 10000 + month * 100 + day;
 
   for (let i = 0; i < 60; i++) {
@@ -44,42 +39,33 @@ function generateMockData(userToday, tzOffsetSeconds = 0) {
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const isToday = i === 0;
 
-    // Seed based on the specific date for consistency
     const dateSeed = baseSeed - i * 7;
     const rand1 = seededRandom(dateSeed);
     const rand2 = seededRandom(dateSeed + 1);
     const rand3 = seededRandom(dateSeed + 2);
     const rand4 = seededRandom(dateSeed + 3);
 
-    // ALWAYS include today + yesterday + day before, skip some others
+    // Always include today + yesterday + day before
     if (i > 2) {
-      // Skip ~40% of weekends, ~10% of weekdays
       if (isWeekend && rand1 > 0.6) continue;
       if (!isWeekend && rand1 > 0.9) continue;
     }
 
-    // Realistic walking desk patterns
     let baseSteps, variance;
     if (isToday) {
-      // Today: simulate active walking by incrementing based on current time
-      // This makes the demo feel "live" - steps increase every few seconds
+      // ACTIVE WORKOUT: Steps increment in real-time
       const now = new Date();
       const userNow = new Date(now.getTime() + tzOffsetSeconds * 1000);
       const currentHour = userNow.getUTCHours();
       const currentMinute = userNow.getUTCMinutes();
       const currentSecond = userNow.getUTCSeconds();
 
-      // Calculate seconds since 9am (start of workday)
       const secondsSince9am = Math.max(0, ((currentHour - 9) * 60 + currentMinute) * 60 + currentSecond);
-
-      // Add ~1 step every 3 seconds (20 steps per minute, 1200 steps per hour)
-      // Round to nearest 5-second interval so it updates in visible chunks
       const fiveSecondIntervals = Math.floor(secondsSince9am / 5);
-      const timeBasedSteps = Math.floor(fiveSecondIntervals * 1.5); // ~1-2 steps per 5 seconds
+      const timeBasedSteps = Math.floor(fiveSecondIntervals * 1.5);
 
-      // Add some base steps from "earlier today" + time-based increment
       baseSteps = 2000 + timeBasedSteps;
-      variance = 100; // Small variance to add some randomness
+      variance = 100;
     } else if (isWeekend) {
       baseSteps = 2000;
       variance = 3000;
@@ -89,17 +75,9 @@ function generateMockData(userToday, tzOffsetSeconds = 0) {
     }
 
     const steps = Math.max(1000, Math.floor(baseSteps + rand2 * variance));
-
-    // ~0.4 meters per step average
     const distanceMeters = Math.floor(steps * 0.4 + rand3 * 100);
-
-    // ~0.04 calories per step
     const calories = Math.floor(steps * 0.04 + rand3 * 20);
-
-    // Duration: roughly 1 step per second at walking pace
     const durationSeconds = Math.floor(steps * 1.1 + rand4 * 300);
-
-    // Speed: 0.5-1.5 m/s typical for walking desk
     const avgSpeed = 0.5 + rand2 * 1.0;
     const maxSpeed = avgSpeed + 0.3 + rand3 * 0.5;
 
@@ -122,7 +100,7 @@ function generateMockData(userToday, tzOffsetSeconds = 0) {
 function generateSamplesForDate(dateStr, summary) {
   const samples = [];
   const [year, month, day] = dateStr.split('-').map(Number);
-  const baseDate = new Date(Date.UTC(year, month - 1, day, 9, 0, 0)); // 9am
+  const baseDate = new Date(Date.UTC(year, month - 1, day, 9, 0, 0));
 
   const numSamples = summary.total_samples;
   const avgInterval = summary.duration_seconds / numSamples;
@@ -132,7 +110,6 @@ function generateSamplesForDate(dateStr, summary) {
   let cumulativeDistance = 0;
   let cumulativeCalories = 0;
 
-  // Use seeded random for consistent samples
   const sampleSeed = year * 10000 + month * 100 + day;
 
   for (let i = 0; i < numSamples; i++) {
@@ -163,7 +140,6 @@ function generateSamplesForDate(dateStr, summary) {
   return samples;
 }
 
-// CORS headers for iOS app
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, OPTIONS',
@@ -176,92 +152,67 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    // Handle CORS preflight
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: corsHeaders });
     }
 
-    // Parse timezone offset from query params (iOS app sends this)
-    // tz_offset is in seconds, e.g., PDT = -25200 (-7 hours)
     const tzOffsetParam = url.searchParams.get('tz_offset');
     const tzOffsetSeconds = tzOffsetParam ? parseInt(tzOffsetParam, 10) : 0;
-
-    // Calculate user's "today" based on their timezone
     const userToday = getUserToday(tzOffsetSeconds);
-
-    // Generate data relative to user's today
     const summaries = generateMockData(userToday, tzOffsetSeconds);
 
-    // Health check
     if (path === '/api/health') {
-      return new Response(JSON.stringify({ status: 'ok', userToday, tzOffsetSeconds }), {
-        headers: corsHeaders
-      });
+      return new Response(JSON.stringify({
+        status: 'ok',
+        demo_mode: 'active',
+        description: 'Steps increment in real-time (active workout)'
+      }), { headers: corsHeaders });
     }
 
-    // Get all dates
     if (path === '/api/dates') {
       const dates = summaries.map(s => s.date);
-      return new Response(JSON.stringify({ dates }), {
-        headers: corsHeaders
-      });
+      return new Response(JSON.stringify({ dates }), { headers: corsHeaders });
     }
 
-    // Get all summaries
     if (path === '/api/dates/summaries') {
-      return new Response(JSON.stringify({ summaries }), {
-        headers: corsHeaders
-      });
+      return new Response(JSON.stringify({ summaries }), { headers: corsHeaders });
     }
 
-    // Get specific date summary
     const summaryMatch = path.match(/^\/api\/dates\/(\d{4}-\d{2}-\d{2})\/summary$/);
     if (summaryMatch) {
       const dateStr = summaryMatch[1];
       const summary = summaries.find(s => s.date === dateStr);
-
       if (summary) {
-        return new Response(JSON.stringify(summary), {
-          headers: corsHeaders
-        });
+        return new Response(JSON.stringify(summary), { headers: corsHeaders });
       }
       return new Response(JSON.stringify({ error: 'Date not found' }), {
-        status: 404,
-        headers: corsHeaders
+        status: 404, headers: corsHeaders
       });
     }
 
-    // Get samples for specific date
     const samplesMatch = path.match(/^\/api\/dates\/(\d{4}-\d{2}-\d{2})\/samples$/);
     if (samplesMatch) {
       const dateStr = samplesMatch[1];
       const summary = summaries.find(s => s.date === dateStr);
-
       if (summary) {
         const samples = generateSamplesForDate(dateStr, summary);
-        return new Response(JSON.stringify({ date: dateStr, samples }), {
-          headers: corsHeaders
-        });
+        return new Response(JSON.stringify({ date: dateStr, samples }), { headers: corsHeaders });
       }
       return new Response(JSON.stringify({ error: 'Date not found' }), {
-        status: 404,
-        headers: corsHeaders
+        status: 404, headers: corsHeaders
       });
     }
 
-    // Bluetooth status (mock - always disconnected for demo)
     if (path === '/api/bluetooth/status') {
       return new Response(JSON.stringify({
         connected: false,
         device_name: null,
-        message: 'Demo mode - no device connected'
+        message: 'Demo mode - active workout'
       }), { headers: corsHeaders });
     }
 
-    // 404 for unknown routes
     return new Response(JSON.stringify({ error: 'Not found' }), {
-      status: 404,
-      headers: corsHeaders
+      status: 404, headers: corsHeaders
     });
   },
 };

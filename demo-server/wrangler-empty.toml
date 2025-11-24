@@ -1,0 +1,5 @@
+name = "demo-empty"
+main = "worker-empty.js"
+compatibility_date = "2024-01-01"
+
+# Empty state - no data at all

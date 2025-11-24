@@ -4,6 +4,7 @@ import Combine
 struct TodayView: View {
     @StateObject private var viewModel = TodayViewModel()
     @State private var autoRefreshTask: Task<Void, Never>?
+    @State private var hasAppeared = false
 
     var body: some View {
         NavigationStack {
@@ -107,45 +108,35 @@ struct TodayView: View {
                         .padding(.vertical, 12)
 
                         // Secondary stats - larger and more prominent
-                        HStack(spacing: 20) {
-                            StatBadge(
-                                value: todaySummary.distanceFormatted,
-                                icon: "figure.walk",
-                                color: .green
-                            )
-                            StatBadge(
-                                value: todaySummary.caloriesFormatted,
-                                icon: "flame.fill",
-                                color: .orange
-                            )
-                            StatBadge(
-                                value: todaySummary.durationFormatted,
-                                icon: "clock.fill",
-                                color: .purple
-                            )
+                        VStack(spacing: 24) {
+                            HStack(spacing: 24) {
+                                StatBadge(
+                                    value: todaySummary.distanceFormatted,
+                                    icon: "figure.walk",
+                                    color: .green
+                                )
+                                StatBadge(
+                                    value: todaySummary.caloriesFormatted,
+                                    icon: "flame.fill",
+                                    color: .orange
+                                )
+                                StatBadge(
+                                    value: todaySummary.durationFormatted,
+                                    icon: "clock.fill",
+                                    color: .purple
+                                )
+                            }
+
+                            HStack(spacing: 24) {
+                                StatBadge(
+                                    value: todaySummary.avgSpeedFormatted,
+                                    icon: "speedometer",
+                                    color: .blue
+                                )
+                            }
                         }
                         .padding(.horizontal)
-
-                        Divider()
-                            .padding(.vertical, 4)
-
-                        // Quick stats - compact horizontal layout
-                        HStack(spacing: 12) {
-                            CompactStatCard(
-                                value: "\(viewModel.currentStreak)",
-                                label: viewModel.currentStreak == 1 ? "day streak" : "day streak",
-                                icon: "flame.fill",
-                                color: .orange
-                            )
-
-                            CompactStatCard(
-                                value: viewModel.weekStepsFormatted,
-                                label: "this week",
-                                icon: "calendar",
-                                color: .blue
-                            )
-                        }
-                        .padding(.horizontal)
+                        .padding(.vertical, 8)
 
                     } else {
                         // No activity today
@@ -164,10 +155,14 @@ struct TodayView: View {
             }
         }
         .onAppear {
-            // Refresh data when tab becomes visible
-            Task {
-                await viewModel.loadData(showLoading: false)
+            // Only refresh on subsequent appearances (not first load)
+            // First load is handled by .task below
+            if hasAppeared {
+                Task {
+                    await viewModel.loadData(showLoading: false)
+                }
             }
+            hasAppeared = true
         }
         .task {
             // Connect to WebSocket for live updates
@@ -179,13 +174,18 @@ struct TodayView: View {
             // Fallback polling when WebSocket is disconnected
             // This also serves as periodic full refresh
             autoRefreshTask = Task {
+                // Start with quick polling to detect if user is currently walking
+                var refreshCount = 0
+
                 while !Task.isCancelled {
-                    // If WebSocket connected, do slower background refresh
-                    // Otherwise, use fast refresh during workout
                     let refreshInterval: Double
                     if viewModel.isWebSocketConnected {
                         refreshInterval = 60.0  // Slow refresh when WebSocket is active
+                    } else if refreshCount < 3 {
+                        // Quick initial polls to detect ongoing workout
+                        refreshInterval = 5.0
                     } else {
+                        // Adaptive polling: fast during workout, slow otherwise
                         refreshInterval = viewModel.isWorkoutOngoing ? 3.0 : 30.0
                     }
 
@@ -194,6 +194,7 @@ struct TodayView: View {
                     if !Task.isCancelled {
                         // Don't show loading indicator during background refresh
                         await viewModel.loadData(showLoading: false)
+                        refreshCount += 1
                     }
                 }
             }
@@ -217,51 +218,22 @@ struct TodayView: View {
     }
 }
 
-// Larger, more prominent stat badges
+// Stat badges
 struct StatBadge: View {
     let value: String
     let icon: String
     let color: Color
 
     var body: some View {
-        VStack(spacing: 6) {
+        VStack(spacing: 8) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.largeTitle)
                 .foregroundColor(color)
             Text(value)
-                .font(.title3)
+                .font(.title2)
                 .fontWeight(.semibold)
         }
-    }
-}
-
-// Compact horizontal stat card
-struct CompactStatCard: View {
-    let value: String
-    let label: String
-    let icon: String
-    let color: Color
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: icon)
-                .font(.title2)
-                .foregroundColor(color)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(value)
-                    .font(.title2)
-                    .fontWeight(.bold)
-                Text(label)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.systemBackground))
-        .cornerRadius(10)
-        .shadow(color: .black.opacity(0.05), radius: 3, x: 0, y: 1)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -276,13 +248,22 @@ class TodayViewModel: ObservableObject {
     @Published var lastStepsChangeTime: Date?
     @Published var isWebSocketConnected = false
 
-    private let apiClient: APIClient
-    private let webSocketManager: WebSocketManager
+    private var apiClient: APIClient
+    private var webSocketManager: WebSocketManager
 
     init() {
         let config = ServerConfig.load()
         self.apiClient = APIClient(config: config)
         self.webSocketManager = WebSocketManager(config: config)
+
+        // Listen for config changes
+        NotificationCenter.default.addObserver(
+            forName: .serverConfigDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleConfigChange()
+        }
 
         // Subscribe to WebSocket connection status
         Task { @MainActor [weak self] in
@@ -315,64 +296,6 @@ class TodayViewModel: ObservableObject {
         // If steps increased within the last 60 seconds, workout is ongoing
         let timeSinceLastChange = Date().timeIntervalSince(lastChange)
         return timeSinceLastChange < 60
-    }
-
-    var currentStreak: Int {
-        guard !allSummaries.isEmpty else { return 0 }
-
-        let calendar = Calendar.current
-
-        // Build set of all dates with data for O(1) lookup
-        let datesWithData: Set<Date> = Set(allSummaries.compactMap { summary in
-            guard let date = summary.dateDisplay else { return nil }
-            return calendar.startOfDay(for: date)
-        })
-
-        var streak = 0
-        var checkDate = calendar.startOfDay(for: Date())
-
-        // Go back up to 365 days
-        for _ in 0..<365 {
-            // Skip weekends entirely
-            if calendar.isDateInWeekend(checkDate) {
-                guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDate) else { break }
-                checkDate = prev
-                continue
-            }
-
-            // Check if this weekday has data
-            if datesWithData.contains(checkDate) {
-                streak += 1
-                guard let prev = calendar.date(byAdding: .day, value: -1, to: checkDate) else { break }
-                checkDate = prev
-            } else {
-                break
-            }
-        }
-
-        return streak
-    }
-
-    var weekStepsFormatted: String {
-        let calendar = Calendar.current
-        let now = Date()
-        guard let weekStart = calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: now)) else {
-            return "0"
-        }
-
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd"
-        let weekStartStr = formatter.string(from: weekStart)
-
-        let weekSteps = allSummaries
-            .filter { $0.date >= weekStartStr }
-            .reduce(0) { $0 + $1.steps }
-
-        if weekSteps >= 1000 {
-            let k = Double(weekSteps) / 1000.0
-            return String(format: "%.1fk", k)
-        }
-        return "\(weekSteps)"
     }
 
     func loadData(showLoading: Bool = true) async {
@@ -424,5 +347,21 @@ class TodayViewModel: ObservableObject {
 
     func disconnectWebSocket() async {
         await webSocketManager.disconnect()
+    }
+
+    private func handleConfigChange() {
+        // Recreate API client and WebSocket manager with new config
+        let newConfig = ServerConfig.load()
+        self.apiClient = APIClient(config: newConfig)
+        self.webSocketManager = WebSocketManager(config: newConfig)
+
+        // Reset state
+        self.previousSteps = 0
+        self.lastStepsChangeTime = nil
+
+        // Reload data
+        Task {
+            await loadData()
+        }
     }
 }

@@ -95,8 +95,8 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var distanceFormatted: String {
-        let miles = Double(distanceMeters) / 1609.34
-        return String(format: "%.2f mi", miles)
+        let preference = UnitPreference.load()
+        return preference.formatDistance(distanceMeters)
     }
 
     var caloriesFormatted: String {
@@ -108,8 +108,8 @@ struct DailySummary: Codable, Identifiable {
     }
 
     var avgSpeedFormatted: String {
-        let mph = avgSpeed * 2.23694 // m/s to mph
-        return String(format: "%.1f mph", mph)
+        let preference = UnitPreference.load()
+        return preference.formatSpeed(avgSpeed)
     }
 
     var syncedAtFormatted: String? {

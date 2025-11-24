@@ -115,7 +115,7 @@ struct HistoryView: View {
                 MonthStatBox(
                     icon: "map",
                     value: viewModel.monthDistanceFormatted,
-                    label: "miles",
+                    label: UnitPreference.load().distanceUnit,
                     color: .green
                 )
                 MonthStatBox(
@@ -464,7 +464,7 @@ struct MonthCalendarView: View {
         VStack(spacing: 8) {
             // Weekday headers
             HStack(spacing: 4) {
-                ForEach(["S", "M", "T", "W", "T", "F", "S"], id: \.self) { day in
+                ForEach(Array(["S", "M", "T", "W", "T", "F", "S"].enumerated()), id: \.offset) { _, day in
                     Text(day)
                         .font(.caption2)
                         .fontWeight(.semibold)
@@ -563,7 +563,7 @@ class HistoryViewModel: ObservableObject {
     @Published var syncError: String?
     @Published var loadError: String?
 
-    private let apiClient: APIClient
+    private var apiClient: APIClient
     private let healthKitManager = HealthKitManager.shared
 
     init() {
@@ -575,6 +575,15 @@ class HistoryViewModel: ObservableObject {
         let now = Date()
         self.selectedYear = calendar.component(.year, from: now)
         self.selectedMonth = calendar.component(.month, from: now)
+
+        // Listen for config changes
+        NotificationCenter.default.addObserver(
+            forName: .serverConfigDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleConfigChange()
+        }
     }
 
     var currentMonthTitle: String {
@@ -681,8 +690,15 @@ class HistoryViewModel: ObservableObject {
             }
             .reduce(0) { $0 + $1.distanceMeters }
 
-        let miles = Double(monthDistance) / 1609.34
-        return String(format: "%.2f", miles)
+        let preference = UnitPreference.load()
+        switch preference {
+        case .imperial:
+            let miles = Double(monthDistance) / 1609.34
+            return String(format: "%.2f", miles)
+        case .metric:
+            let km = Double(monthDistance) / 1000.0
+            return String(format: "%.2f", km)
+        }
     }
 
     var monthCaloriesFormatted: String {
@@ -815,5 +831,16 @@ class HistoryViewModel: ObservableObject {
         await loadData()
 
         isSyncing = false
+    }
+
+    private func handleConfigChange() {
+        // Recreate API client with new config
+        let newConfig = ServerConfig.load()
+        self.apiClient = APIClient(config: newConfig)
+
+        // Reload data
+        Task {
+            await loadData()
+        }
     }
 }
